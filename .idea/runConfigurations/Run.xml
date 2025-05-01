@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Run" type="JarApplication">
+    <option name="JAR_PATH" value="$PROJECT_DIR$/target/nothello-1.0-SNAPSHOT.jar" />
+    <option name="WORKING_DIRECTORY" value="C:\Users\olinb\Documents\HEIG\sem8\PLM\nothello" />
+    <option name="ALTERNATIVE_JRE_PATH" />
+    <method v="2" />
+  </configuration>
+</component>
