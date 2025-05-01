@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Build and Run" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="heigvd.plm.nothello.App" />
+    <module name="nothello" />
+    <option name="PROGRAM_PARAMETERS" value="-c 'mvn clean package &amp;&amp; java -jar target/othello-game-1.0-SNAPSHOT.jar'" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
