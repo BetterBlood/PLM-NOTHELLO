@@ -1,5 +1,8 @@
 package heigvd.plm.nothello.game;
 
+import java.sql.SQLOutput;
+import java.util.LinkedList;
+
 public class Board {
 
     private PieceColor[][] board;
@@ -28,17 +31,62 @@ public class Board {
         return board[x][y];
     }
 
-    public boolean playAt(int x, int y) {
+    public boolean playAt(int x, int y) { // TODO : if unplayable swap player
+        System.out.println("try to played at: (" + x + ";" + y + ")");
         if (x < 0 || x >= 8 || y < 0 || y >= 8) {
             throw new IllegalArgumentException("Coordinates out of bounds");
         }
+
         if (board[x][y] != PieceColor.NONE) {
+            System.out.println("Occupied: (" + x + ";" + y + ")");
             return false; // Cannot overwrite an existing piece
         }
+        else if (getMoveScore(x, y, currentPlayer) < 1) {
+            System.out.println("Impossible move: (" + x + ";" + y + ")");
+            return false;
+        }
+        else {
+            updateBoard(x, y);
+        }
+        return true;
+    }
 
+    private void updateBoard(int x, int y) { // TODO : optimisation
+        for (int i = -1; i < 2; ++i) {
+            for (int j = -1; j < 2; ++j) {
+                if (i == 0 && j == 0) continue; // Skip these positions
+                int nx = x + i;
+                int ny = y + j;
+                int tmp_val = 0;
+                boolean ok = false;
+
+                while(nx >= 0 && ny >= 0 && nx < 8 && ny < 8) {
+                    if (board[nx][ny] == currentPlayer.opposite()) {
+                        ++tmp_val;
+                        nx += i;
+                        ny += j;
+                    }
+                    else if (board[nx][ny] == currentPlayer) {
+                        ok = true;
+                        break;
+                    }
+                    else { // empty cell
+                        break;
+                    }
+                }
+
+                if (ok) {
+                    for (int k = 0; k < tmp_val; ++k) {
+                        nx -= i;
+                        ny -= j;
+                        System.out.println("colored: (" + nx + ";" + ny + ")");
+                        board[nx][ny] = currentPlayer;
+                    }
+                }
+            }
+        }
         board[x][y] = currentPlayer;
         currentPlayer = currentPlayer.opposite();
-        return true;
     }
 
     public int setColorAt(int x, int y, PieceColor pieceColor) {
@@ -55,7 +103,7 @@ public class Board {
         return score;
     }
 
-    public int getMoveScore(int x, int y, PieceColor $PieceColor) {
+    public int getMoveScore(int x, int y, PieceColor $PieceColor) { // TODO : optimisation
         if (x < 0 || x >= 8 || y < 0 || y >= 8) {
             throw new IllegalArgumentException("Coordinates out of bounds");
         }
@@ -64,15 +112,20 @@ public class Board {
         }
 
         int score = 0;
+        int tmpScore = 0;
+        boolean ok = false;
         for (int i = -1; i <= 1; i++) {
             for (int j = -1; j <= 1; j++) {
+                tmpScore = 0;
+                ok = false;
                 if (i == 0 && j == 0) continue; // Skip the current position
                 int nx = x + i;
                 int ny = y + j;
                 while (nx >= 0 && nx < 8 && ny >= 0 && ny < 8) {
                     if (board[nx][ny] == $PieceColor.opposite()) {
-                        score++;
+                        tmpScore++;
                     } else if (board[nx][ny] == $PieceColor) {
+                        ok = true;
                         break;
                     } else {
                         break;
@@ -80,6 +133,7 @@ public class Board {
                     nx += i;
                     ny += j;
                 }
+                if (ok) score += tmpScore;
             }
         }
         return score;

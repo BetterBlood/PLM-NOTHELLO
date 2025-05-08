@@ -3,11 +3,13 @@ package heigvd.plm.nothello.gui;
 import heigvd.plm.nothello.game.Board;
 import heigvd.plm.nothello.game.PieceColor;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
+import java.io.IOException;
+import java.util.Objects;
 
 public class OthelloGUI extends JFrame {
-
     private final Board board;
     private final JButton[][] buttons = new JButton[8][8];
     private final JComboBox<String> player1Type;
@@ -15,7 +17,7 @@ public class OthelloGUI extends JFrame {
     private final JComboBox<String> player1Strategy;
     private final JComboBox<String> player2Strategy;
 
-    public OthelloGUI() {
+    public OthelloGUI(){
         this.board = new Board();
         setTitle("Othello - PLM");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
@@ -29,7 +31,7 @@ public class OthelloGUI extends JFrame {
                 btn.setPreferredSize(new Dimension(60, 60));
                 btn.setFocusPainted(false);
                 btn.setMargin(new Insets(0, 0, 0, 0));
-                btn.setBackground(Color.LIGHT_GRAY);
+                btn.setBackground(new Color(17,100,7));
 
                 final int x = i, y = j;
                 btn.addActionListener(e -> handleCellClick(x, y));
@@ -76,6 +78,7 @@ public class OthelloGUI extends JFrame {
 
     private void handleCellClick(int x, int y) {
         if (board.playAt(x, y)) {
+            System.out.println("valid placement");
             updateBoardDisplay();
         }
     }
@@ -85,18 +88,22 @@ public class OthelloGUI extends JFrame {
             for (int j = 0; j < 8; ++j) {
                 JButton btn = buttons[i][j];
                 PieceColor c = board.getColorAt(i, j);
+                //System.out.print(c);
                 switch (c) {
-                    case BLACK -> btn.setIcon(new ImageIcon("black.png"));
-                    case WHITE -> btn.setIcon(new ImageIcon("white.png"));
+                    case BLACK -> btn.setIcon(new ImageIcon(Objects.requireNonNull(
+                            getClass().getResource("/images/black.png"))));
+                    case WHITE -> btn.setIcon(new ImageIcon(Objects.requireNonNull(
+                            getClass().getResource("/images/white.png"))));
                     case NONE -> btn.setIcon(null);
                 }
             }
+            //System.out.println();
         }
     }
 
     private void resetBoard() {
         this.dispose();
-        new OthelloGUI(); // simple relance
+        new OthelloGUI();
     }
 
     public static void main(String[] args) {
