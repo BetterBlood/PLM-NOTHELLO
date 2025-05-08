@@ -1,12 +1,12 @@
 package heigvd.plm.nothello.game;
 
-public enum Color {
+public enum PieceColor {
 
     BLACK,
     WHITE,
     NONE;
 
-    public Color opposite() {
+    public PieceColor opposite() {
         if (this == BLACK) {
             return WHITE;
         } else if (this == WHITE) {
