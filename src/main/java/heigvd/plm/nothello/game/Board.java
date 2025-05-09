@@ -31,7 +31,7 @@ public class Board {
         return board[x][y];
     }
 
-    public boolean playAt(int x, int y) { // TODO : if unplayable swap player
+    public boolean playAt(int x, int y) {
         System.out.println("try to played at: (" + x + ";" + y + ")");
         if (x < 0 || x >= 8 || y < 0 || y >= 8) {
             throw new IllegalArgumentException("Coordinates out of bounds");
@@ -87,6 +87,7 @@ public class Board {
         }
         board[x][y] = currentPlayer;
         currentPlayer = currentPlayer.opposite();
+        // TODO : if no playable move: swap player
     }
 
     public int setColorAt(int x, int y, PieceColor pieceColor) {
@@ -101,6 +102,10 @@ public class Board {
 
         board[x][y] = pieceColor;
         return score;
+    }
+
+    public PieceColor getPlayerTurn() {
+        return currentPlayer;
     }
 
     public int getMoveScore(int x, int y, PieceColor $PieceColor) { // TODO : optimisation
