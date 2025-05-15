@@ -2,14 +2,18 @@ package heigvd.plm.nothello.gui;
 
 import heigvd.plm.nothello.game.Board;
 import heigvd.plm.nothello.game.PieceColor;
+import heigvd.plm.nothello.logic.*;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ItemListener;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Objects;
 
 public class OthelloGUI extends JFrame {
     private final Board board;
+    private final PredictionEvaluator evaluator;
     private final JButton[][] buttons = new JButton[8][8];
     private final JComboBox<String> player1Type;
     private final JComboBox<String> player2Type;
@@ -20,14 +24,20 @@ public class OthelloGUI extends JFrame {
     private final JLabel currentPlayerLabel;
     private final JButton simulateButton;
     private final String[] playerSelection = new String[]{"Human", "Bot"};
-    private final String[] strat = new String[]{"Max Flips", "Min Opponent", "Corner Priority"};
+    private final String[] strat = new String[]{"Max Flips", "Min Opponent Flips", "Min Opponent Opportunities", "Placement Priority"};
 
     private final JButton stepByStepButton;
     private final JSpinner player1Depth;
     private final JSpinner player2Depth;
+    private final JCheckBox player1PredictionToggle;
+    private final JCheckBox player2PredictionToggle;
+    private final JButton showPrediction = new JButton("Compute Strategy");
+    private final JLabel loadingLabel = new JLabel();
 
     public OthelloGUI(){
         this.board = new Board();
+        this.evaluator = new PredictionEvaluator(this.board);
+
         setTitle("Othello - PLM");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -53,6 +63,7 @@ public class OthelloGUI extends JFrame {
         controlPanel.setLayout(new BorderLayout());
 
         // Panels pour chaque joueur
+        // noir
         JPanel player1Panel = new JPanel();
         player1Panel.setLayout(new BoxLayout(player1Panel, BoxLayout.Y_AXIS));
         player1Panel.setBorder(BorderFactory.createTitledBorder("Joueur Noir"));
@@ -71,6 +82,12 @@ public class OthelloGUI extends JFrame {
         player1Depth = new JSpinner(new SpinnerNumberModel(1, 1, 5, 1));
         player1Panel.add(player1Depth);
 
+        player1Panel.add(Box.createVerticalStrut(5));
+        player1PredictionToggle = new JCheckBox("Afficher Prédictions");
+        player1PredictionToggle.setSelected(true);
+        player1Panel.add(player1PredictionToggle);
+
+        // blanc
         JPanel player2Panel = new JPanel();
         player2Panel.setLayout(new BoxLayout(player2Panel, BoxLayout.Y_AXIS));
         player2Panel.setBorder(BorderFactory.createTitledBorder("Joueur Blanc"));
@@ -89,10 +106,21 @@ public class OthelloGUI extends JFrame {
         player2Depth = new JSpinner(new SpinnerNumberModel(1, 1, 5, 1));
         player2Panel.add(player2Depth);
 
+        player2Panel.add(Box.createVerticalStrut(5));
+        player2PredictionToggle = new JCheckBox("Afficher Prédictions");
+        player2PredictionToggle.setSelected(true);
+        player2Panel.add(player2PredictionToggle);
+
+
         // Panel combiné des joueurs
-        JPanel playersPanel = new JPanel(new GridLayout(1, 2));
-        playersPanel.add(player1Panel);
-        playersPanel.add(player2Panel);
+        JPanel playersPanel = new JPanel();
+        playersPanel.setLayout(new BoxLayout(playersPanel, BoxLayout.Y_AXIS));
+        JPanel playersPanelSplit = new JPanel(new GridLayout(1, 2));
+        playersPanelSplit.add(player1Panel);
+        playersPanelSplit.add(player2Panel);
+        playersPanel.add(playersPanelSplit);
+        showPrediction.addActionListener(e -> updateBoardDisplay());// TODO: center
+        playersPanel.add(showPrediction);
 
         // Infos partie
         currentPlayerLabel = new JLabel("Tour actuel : Blanc");
@@ -128,6 +156,13 @@ public class OthelloGUI extends JFrame {
         controlPanel.add(playersPanel, BorderLayout.NORTH);
         controlPanel.add(bottomControlPanel, BorderLayout.SOUTH);
 
+        // loading fig
+        loadingLabel.setIcon(new ImageIcon(Objects.requireNonNull(
+                getClass().getResource("/images/loading.gif"))));
+        loadingLabel.setVisible(false);
+        controlPanel.add(loadingLabel, BorderLayout.CENTER);
+
+
         // Ajout à la fenêtre
         add(gridPanel, BorderLayout.CENTER);
         add(controlPanel, BorderLayout.EAST);
@@ -144,10 +179,16 @@ public class OthelloGUI extends JFrame {
             updateBoardDisplay();
             currentPlayerLabel.setText("Tour actuel : " + board.getPlayerTurn());
             updateStepByStepButtonState();
+            if (board.isOver()) { // TODO : recompute score
+                String blackScore = blackScoreLabel.getText().split(":")[1].trim();
+                String whiteScore = whiteScoreLabel.getText().split(":")[1].trim();
+                JOptionPane.showMessageDialog(this, "Game Over: " + " Scores: Noir: " + blackScore + ", Blanc: " + whiteScore + ".");
+            }
         }
     }
 
     private void updateBoardDisplay() {
+        loadingLabel.setVisible(true);
         int blackScore = 0;
         int whiteScore = 0;
 
@@ -157,7 +198,7 @@ public class OthelloGUI extends JFrame {
                 PieceColor c = board.getColorAt(i, j);
                 //System.out.print(c);
                 switch (c) {
-                    case BLACK ->  {
+                    case BLACK -> {
                         btn.setIcon(new ImageIcon(Objects.requireNonNull(
                                 getClass().getResource("/images/black.png"))));
                         ++blackScore;
@@ -175,7 +216,51 @@ public class OthelloGUI extends JFrame {
 
         blackScoreLabel.setText("Noir : " + blackScore);
         whiteScoreLabel.setText("Blanc : " + whiteScore);
+
+        if (shouldShowPrediction()) {
+            evaluator.setStrategy(getSelectedStrategyForCurrentPlayer());
+            loadingLabel.setVisible(true);
+
+            SwingWorker<List<int[]>, Void> worker = new SwingWorker<>() {
+                @Override
+                protected List<int[]> doInBackground() {
+                    // Calculer en background
+                    return evaluator.evaluateMoves(getSelectedDepthForCurrentPlayer());
+                }
+
+                @Override
+                protected void done() {
+                    try {
+                        List<int[]> predictions = get(); // récupère les résultats
+                        showPredictions(predictions);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    } finally {
+                        loadingLabel.setVisible(false);
+                    }
+                }
+            };
+            worker.execute(); // démarre le thread
+        }
     }
+
+    private NotHelloStrategy getSelectedStrategyForCurrentPlayer() {
+        JComboBox<String> box = board.getPlayerTurn() == PieceColor.BLACK ? player1Strategy : player2Strategy;
+        return switch (Objects.requireNonNull(box.getSelectedItem()).toString()) {
+            case "Max Flips" -> new NotHelloMaxFlipsStrategy();
+            case "Min Opponent Flips" -> new NotHelloMinOpponentFlipsStrategy();
+            case "Min Opponent Opportunities" -> new NotHelloMinOpponentOpportunitiesStrategy();
+            case "Placement Priority" -> new NotHelloPlacementPriorityStrategy();
+            default -> new NotHelloMaxFlipsStrategy();
+        };
+    }
+
+    private int getSelectedDepthForCurrentPlayer() {
+        return board.getPlayerTurn() == PieceColor.BLACK
+                ? (int) player1Depth.getValue()
+                : (int) player2Depth.getValue();
+    }
+
 
     private void simulateGame() {
         JOptionPane.showMessageDialog(this, "Simulation entre bots à implémenter !");
@@ -186,6 +271,24 @@ public class OthelloGUI extends JFrame {
         JOptionPane.showMessageDialog(this, "Tour de bot unique à implémenter !");
         // TODO: Implémenter le coup unique entre bots (en fonction des stratégies + profondeur)
     }
+
+    /**
+     * Affiche les prédictions des coups possibles sur la grille.
+     * @param evaluations Liste de coups avec leur score (1 à 5). Chaque entrée est : int[0]=x, int[1]=y, int[2]=score (1=meilleur, 5=pire)
+     */
+    private void showPredictions(java.util.List<int[]> evaluations) {
+        for (int[] eval : evaluations) {
+            ImageIcon icon = new ImageIcon(Objects.requireNonNull(
+                    getClass().getResource("/images/prediction_" + eval[2] + ".png")));
+            buttons[eval[0]][eval[1]].setIcon(icon);
+        }
+    }
+
+    private boolean shouldShowPrediction() {
+        return (board.getPlayerTurn() == PieceColor.BLACK && player1PredictionToggle.isSelected())
+                || (board.getPlayerTurn() == PieceColor.WHITE && player2PredictionToggle.isSelected());
+    }
+
 
     private void updateSimulationButtonState() {
         simulateButton.setEnabled(

@@ -7,6 +7,7 @@ public class Board {
 
     private PieceColor[][] board;
     private PieceColor currentPlayer;
+    private boolean gameOver = false;
 
     public Board() {
         // Set initial state
@@ -59,6 +60,18 @@ public class Board {
         }
     }
 
+    public java.util.List<int[]> getValidMovesForCurrentPlayer() { // TODO : voir si on ne devrait pas utiliser OR-Tools pour ça
+        java.util.List<int[]> validMoves = new java.util.ArrayList<>();
+        for (int i = 0; i < 8; ++i) {
+            for (int j = 0; j < 8; ++j) {
+                if (board[i][j] == PieceColor.NONE && getMoveScore(i, j, currentPlayer) > 0) {
+                    validMoves.add(new int[]{i, j});
+                }
+            }
+        }
+        return validMoves;
+    }
+
     private void end() {
         int blackScore = 0;
         int whiteScore = 0;
@@ -74,6 +87,11 @@ public class Board {
         }
 
         System.out.println("Game over! Final score: Black: " + blackScore + ", White: " + whiteScore);
+        gameOver = true;
+    }
+
+    public boolean isOver() {
+        return gameOver;
     }
 
     private boolean isPlayable() {
