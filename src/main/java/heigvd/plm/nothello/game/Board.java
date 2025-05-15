@@ -33,25 +33,64 @@ public class Board {
 
     public boolean playAt(int x, int y) {
         System.out.println("try to played at: (" + x + ";" + y + ")");
+
         if (x < 0 || x >= 8 || y < 0 || y >= 8) {
             throw new IllegalArgumentException("Coordinates out of bounds");
         }
 
-        if (board[x][y] != PieceColor.NONE) {
-            System.out.println("Occupied: (" + x + ";" + y + ")");
-            return false; // Cannot overwrite an existing piece
-        }
-        else if (getMoveScore(x, y, currentPlayer) < 1) {
-            System.out.println("Impossible move: (" + x + ";" + y + ")");
-            return false;
+        int score = setColorAt(x, y, currentPlayer);
+        if (score >= 1) {
+            updateBoard(x, y, currentPlayer);
+            currentPlayer = currentPlayer.opposite();
+
+            if (!isPlayable()) {
+                System.out.println("No more moves available for " + currentPlayer);
+                currentPlayer = currentPlayer.opposite();
+                if (!isPlayable()) {
+                    System.out.println("Game over, no one can play");
+                    end();
+                }
+            }
+            return true;
         }
         else {
-            updateBoard(x, y);
+            System.out.println("Invalid placement at (" + x + ";" + y + ")");
+            return false;
         }
-        return true;
     }
 
-    private void updateBoard(int x, int y) { // TODO : optimisation
+    private void end() {
+        int blackScore = 0;
+        int whiteScore = 0;
+
+        for (int i = 0; i < 8; ++i) {
+            for (int j = 0; j < 8; ++j) {
+                if (board[i][j] == PieceColor.BLACK) {
+                    ++blackScore;
+                } else if (board[i][j] == PieceColor.WHITE) {
+                    ++whiteScore;
+                }
+            }
+        }
+
+        System.out.println("Game over! Final score: Black: " + blackScore + ", White: " + whiteScore);
+    }
+
+    private boolean isPlayable() {
+        for (int i = 0; i < 8; ++i) {
+            for (int j = 0; j < 8; ++j) {
+                // TODO : optimisation car getMoveScore va calculer le score complet
+                //  alors qu'on a juste besoin de savoir si un coup est possible pour le joueur courant
+
+                if (board[i][j] == PieceColor.NONE && getMoveScore(i, j, currentPlayer) > 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void updateBoard(int x, int y, PieceColor color) { // TODO : optimisation
         for (int i = -1; i < 2; ++i) {
             for (int j = -1; j < 2; ++j) {
                 if (i == 0 && j == 0) continue; // Skip these positions
@@ -61,12 +100,12 @@ public class Board {
                 boolean ok = false;
 
                 while(nx >= 0 && ny >= 0 && nx < 8 && ny < 8) {
-                    if (board[nx][ny] == currentPlayer.opposite()) {
+                    if (board[nx][ny] == color.opposite()) {
                         ++tmp_val;
                         nx += i;
                         ny += j;
                     }
-                    else if (board[nx][ny] == currentPlayer) {
+                    else if (board[nx][ny] == color) {
                         ok = true;
                         break;
                     }
@@ -80,14 +119,11 @@ public class Board {
                         nx -= i;
                         ny -= j;
                         System.out.println("colored: (" + nx + ";" + ny + ")");
-                        board[nx][ny] = currentPlayer;
+                        board[nx][ny] = color;
                     }
                 }
             }
         }
-        board[x][y] = currentPlayer;
-        currentPlayer = currentPlayer.opposite();
-        // TODO : if no playable move: swap player
     }
 
     public int setColorAt(int x, int y, PieceColor pieceColor) {
@@ -99,7 +135,9 @@ public class Board {
         }
 
         int score = getMoveScore(x, y, pieceColor);
-
+        if (score == 0) {
+            return 0; // Invalid move
+        }
         board[x][y] = pieceColor;
         return score;
     }
