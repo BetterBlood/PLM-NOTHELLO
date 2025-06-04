@@ -26,6 +26,12 @@
       <version>3.8.1</version>
       <scope>test</scope>
     </dependency>
+    <!-- https://mvnrepository.com/artifact/com.google.ortools/ortools-java -->
+    <dependency> <!-- TODO : warning DOS, ignored for this project-->
+      <groupId>com.google.ortools</groupId>
+      <artifactId>ortools-java</artifactId>
+      <version>9.10.4067</version>
+    </dependency>
   </dependencies>
 
   <build>

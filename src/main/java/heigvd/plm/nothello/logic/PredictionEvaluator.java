@@ -29,32 +29,8 @@ public class PredictionEvaluator {
      * @return Liste de coups sous forme [x, y, score de 1 (meilleur) à 5 (pire)]
      */
     public List<int[]> evaluateMoves(int recursionDepth) {
-        List<int[]> result = new ArrayList<>();
-
-        // Étapes prévues dans currentStrategy.evaluate:
-        // 1. Cloner le plateau
-        // 2. Appliquer le coup du joueur
-        // 3. Si depth > 1, générer les coups de l’adversaire et évaluer leur meilleur contre-coup
-        // 4. Retourner une évaluation brute
-        result = currentStrategy.evaluate(board, recursionDepth);
-
-        List<int[]> validMoves = board.getValidMovesForCurrentPlayer(); // TODO: tmp
-
-        for (int[] move : validMoves) { // TODO: tmp
-            result.add(new int[]{move[0], move[1], evaluateMove(move[0], move[1], recursionDepth)});
-        }
-
-        return normalizeScores(result);
+        return normalizeScores(currentStrategy.evaluate(board, recursionDepth));
     }
-
-    /**
-     * Évalue un coup avec récursion.
-     * Implémentation prévue via OR-Tools.
-     */
-    private int evaluateMove(int x, int y, int depth) { // TODO: tmp
-        return rng.nextInt()%5; // TODO: tmp
-    }
-
 
     /**
      * Normalise les scores sur une échelle de 1 (meilleur) à 5 (pire).

@@ -33,7 +33,7 @@ public class Board {
     }
 
     public boolean playAt(int x, int y) {
-        System.out.println("try to played at: (" + x + ";" + y + ")");
+        //System.out.println("try to played at: (" + x + ";" + y + ")");
 
         if (x < 0 || x >= 8 || y < 0 || y >= 8) {
             throw new IllegalArgumentException("Coordinates out of bounds");
@@ -55,7 +55,7 @@ public class Board {
             return true;
         }
         else {
-            System.out.println("Invalid placement at (" + x + ";" + y + ")");
+            System.out.println("Invalid placement at (" + x + ";" + y + "), score: " + score);
             return false;
         }
     }
@@ -136,7 +136,7 @@ public class Board {
                     for (int k = 0; k < tmp_val; ++k) {
                         nx -= i;
                         ny -= j;
-                        System.out.println("colored: (" + nx + ";" + ny + ")");
+                        System.out.println("played at: (" + x + ";" + y + "), colored: (" + nx + ";" + ny + ")");
                         board[nx][ny] = color;
                     }
                 }
@@ -149,6 +149,7 @@ public class Board {
             throw new IllegalArgumentException("Coordinates out of bounds");
         }
         if (board[x][y] != PieceColor.NONE) {
+            //System.out.println("at: (" + x + ";" + y + ") contain piece");
             return 0; // Cannot overwrite an existing piece
         }
 
@@ -160,11 +161,23 @@ public class Board {
         return score;
     }
 
+
+    /**
+     * Force player turn
+     * @param pieceColor the new player color desired
+     * @return false if nothing changed
+     */
+    public boolean setPlayerTurn(PieceColor pieceColor) {
+        if (getPlayerTurn() == pieceColor) return false;
+        currentPlayer = pieceColor;
+        return true;
+    }
+
     public PieceColor getPlayerTurn() {
         return currentPlayer;
     }
 
-    public int getMoveScore(int x, int y, PieceColor $PieceColor) { // TODO : optimisation
+    public int getMoveScore(int x, int y, PieceColor pieceColor) { // TODO : optimisation
         if (x < 0 || x >= 8 || y < 0 || y >= 8) {
             throw new IllegalArgumentException("Coordinates out of bounds");
         }
@@ -173,20 +186,32 @@ public class Board {
         }
 
         int score = 0;
-        int tmpScore = 0;
-        boolean ok = false;
-        for (int i = -1; i <= 1; i++) {
-            for (int j = -1; j <= 1; j++) {
+        int tmpScore;
+        boolean ok;
+        for (int i = -1; i <= 1; ++i) {
+            for (int j = -1; j <= 1; ++j) {
                 tmpScore = 0;
                 ok = false;
                 if (i == 0 && j == 0) continue; // Skip the current position
                 int nx = x + i;
                 int ny = y + j;
+                if (i == 1 && j == -1 && x == 2 && y == 5) {
+                    //System.out.println("for (2, 5), pieceColor: " + pieceColor);
+                }
                 while (nx >= 0 && nx < 8 && ny >= 0 && ny < 8) {
-                    if (board[nx][ny] == $PieceColor.opposite()) {
+                    if (i == 1 && j == -1 && x == 2 && y == 5) {
+                        //System.out.println("nx: " + nx + ", ny: " + ny + ", board[nx][ny]: " + board[nx][ny]);
+                    }
+                    if (board[nx][ny] == pieceColor.opposite()) {
+                        if (i == 1 && j == -1 && x == 2 && y == 5) {
+                            //System.out.println("tmpScore: " + (tmpScore + 1));
+                        }
                         tmpScore++;
-                    } else if (board[nx][ny] == $PieceColor) {
+                    } else if (board[nx][ny] == pieceColor) {
                         ok = true;
+                        if (i == 1 && j == -1 && x == 2 && y == 5) {
+                            //System.out.println("ok");
+                        }
                         break;
                     } else {
                         break;
@@ -197,6 +222,7 @@ public class Board {
                 if (ok) score += tmpScore;
             }
         }
+        System.out.println("for: (" + x + ";" + y + "), score: " + score);
         return score;
     }
 
