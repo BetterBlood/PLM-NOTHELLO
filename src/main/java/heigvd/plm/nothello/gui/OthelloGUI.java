@@ -225,7 +225,7 @@ public class OthelloGUI extends JFrame {
                 @Override
                 protected List<int[]> doInBackground() {
                     // Calculer en background
-                    return evaluator.evaluateMoves(getSelectedDepthForCurrentPlayer());
+                    return evaluator.evaluateMoves(getSelectedDepthForCurrentPlayer() * 2 - 1, getSelectedStrategyForOpponent());
                 }
 
                 @Override
@@ -246,6 +246,17 @@ public class OthelloGUI extends JFrame {
 
     private NotHelloStrategy getSelectedStrategyForCurrentPlayer() {
         JComboBox<String> box = board.getPlayerTurn() == PieceColor.BLACK ? player1Strategy : player2Strategy;
+        return switch (Objects.requireNonNull(box.getSelectedItem()).toString()) {
+            case "Max Flips" -> new NotHelloMaxFlipsStrategy();
+            case "Min Opponent Flips" -> new NotHelloMinOpponentFlipsStrategy();
+            case "Min Opponent Opportunities" -> new NotHelloMinOpponentOpportunitiesStrategy();
+            case "Placement Priority" -> new NotHelloPlacementPriorityStrategy();
+            default -> new NotHelloMaxFlipsStrategy();
+        };
+    }
+
+    private NotHelloStrategy getSelectedStrategyForOpponent() {
+        JComboBox<String> box = board.getPlayerTurn() != PieceColor.BLACK ? player1Strategy : player2Strategy;
         return switch (Objects.requireNonNull(box.getSelectedItem()).toString()) {
             case "Max Flips" -> new NotHelloMaxFlipsStrategy();
             case "Min Opponent Flips" -> new NotHelloMinOpponentFlipsStrategy();

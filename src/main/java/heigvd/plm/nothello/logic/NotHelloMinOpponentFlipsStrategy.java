@@ -7,7 +7,7 @@ import java.util.List;
 
 public class NotHelloMinOpponentFlipsStrategy implements NotHelloStrategy {
     @Override
-    public List<int[]> evaluate(Board board, int depth) {
+    public List<int[]> evaluate(Board board, int depth, NotHelloStrategy strategy) {
         List<int[]> result = new LinkedList<>();
         System.out.println("NotHelloMinOpponentFlipsStrategy");
         for (Integer i = 0; i < Integer.MAX_VALUE/4; ++i){}

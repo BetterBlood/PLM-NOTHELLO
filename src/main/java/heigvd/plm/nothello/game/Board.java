@@ -155,10 +155,19 @@ public class Board {
 
         int score = getMoveScore(x, y, pieceColor);
         if (score == 0) {
+            //System.out.println("at: (" + x + ";" + y + ") Invalid move");
             return 0; // Invalid move
         }
         board[x][y] = pieceColor;
         return score;
+    }
+
+    public void hardSetColorAt(int x, int y, PieceColor pieceColor) {
+        if (x < 0 || x >= 8 || y < 0 || y >= 8) {
+            throw new IllegalArgumentException("Coordinates out of bounds");
+        }
+
+        board[x][y] = pieceColor;
     }
 
 
@@ -222,7 +231,7 @@ public class Board {
                 if (ok) score += tmpScore;
             }
         }
-        System.out.println("for: (" + x + ";" + y + "), score: " + score);
+        //System.out.println("for: (" + x + ";" + y + "), score: " + score);
         return score;
     }
 

@@ -11,7 +11,7 @@ import java.util.List;
 
 public class NotHelloMaxFlipsStrategy implements NotHelloStrategy {
     @Override
-    public List<int[]> evaluate(Board board, int depth) {
+    public List<int[]> evaluate(Board board, int depth, NotHelloStrategy strategy) {
 
         // 1. Cloner le plateau
         // 2. Appliquer le coup du joueur
@@ -32,7 +32,7 @@ public class NotHelloMaxFlipsStrategy implements NotHelloStrategy {
             CpModel model = new CpModel();
             BoolVar moveVar = model.newBoolVar("move_" + x + "_" + y);
 
-            int score = simulateMoveWithDepth(board, x, y, depth);
+            int score = simulateMoveWithDepth(board, x, y, depth, strategy);
 
             // Score objectif pour CE coup uniquement
             model.maximize(LinearExpr.weightedSum(new BoolVar[]{moveVar}, new long[]{score}));
@@ -58,72 +58,61 @@ public class NotHelloMaxFlipsStrategy implements NotHelloStrategy {
     /**
      * Simule le coup joué et évalue récursivement jusqu'à la profondeur donnée.
      */
-    private int simulateMoveWithDepth(Board originalBoard, int x, int y, int depth) {
+    private int simulateMoveWithDepth(Board originalBoard, int x, int y, int depth, NotHelloStrategy enemy_strategy) {
+        System.out.println("simulateMoveWithDepth(x=" + x + ", y=" + y + ", depth=" + depth + ", player=" + originalBoard.getPlayerTurn() + ")");
         if (depth <= 0) return 0;
+        if (depth == 1) return originalBoard.getMoveScore(x, y, originalBoard.getPlayerTurn());
+
+        // odd : player, otherwise: opponent
 
         // Clone du plateau
         Board cloned = cloneBoard(originalBoard);
+        PieceColor currentPlayer = cloned.getPlayerTurn();
 
-        PieceColor current = cloned.getPlayerTurn();
-
-        // Joue le coup actuel
+        int baseScore = originalBoard.getMoveScore(x, y, currentPlayer);
+        // Joue le coup sur le plateau cloné
         boolean movePlayed = cloned.playAt(x, y);
         if (!movePlayed) {
-            System.out.println("coup invalide ???? (" + x + ";" + y + ")");
-            return 1; // TODO: understand why board contains wrong color
+            System.out.println(cloned.toString());
+            System.out.println("Coup invalide (" + x + ";" + y + ") à depth " + depth); // wtf ??
+            return 0;
         }
 
-        int baseScore = originalBoard.getMoveScore(x, y, current);
+        if (cloned.getPlayerTurn() == currentPlayer) { // opponent can't play
+            PredictionEvaluator playerAgainEvaluator = new PredictionEvaluator(cloned);
+            playerAgainEvaluator.setStrategy(this);
 
-        if (depth == 1) return baseScore;
+            List<int[]> nextMoves = cloned.getValidMovesForCurrentPlayer();
+            if (nextMoves.isEmpty()) return baseScore;
 
-        // Tour de l’adversaire // TODO : take care of the real opponent strategy
+            int bestResponse = 0;
+            for (int[] againMove : nextMoves) {
+                int res = simulateMoveWithDepth(cloned, againMove[0], againMove[1], depth - 2, enemy_strategy);
+                bestResponse = Math.max(bestResponse, res);
+            }
+            return baseScore + bestResponse;
+        }
+
         PredictionEvaluator enemyEvaluator = new PredictionEvaluator(cloned);
-        enemyEvaluator.setStrategy(new NotHelloMaxFlipsStrategy());
-        List<int[]> counterMoves = enemyEvaluator.evaluateMoves(1);
+        enemyEvaluator.setStrategy(enemy_strategy);
 
-        if (counterMoves.isEmpty()) return baseScore;
-
-        // On prend le meilleur coup pour l'adversair (score max) le pire coup qu'il puisse faire pour le joueur courant
-        int worstCounterScore = 0;
-        int enemy_x = 0;
-        int enemy_y = 0;
-        for (int[] counterMove : counterMoves) {
-            int cur_worst = worstCounterScore;
-            worstCounterScore = Math.max(worstCounterScore, counterMove[2]);
-            if (cur_worst != worstCounterScore)  {
-                enemy_x = counterMove[0];
-                enemy_y = counterMove[1];
-            }
-        }
-        movePlayed = cloned.playAt(enemy_x, enemy_y);
-        if (!movePlayed) {
-            System.out.println("coup invalide ???? (" + x + ";" + y + ")");
-            return 0; //TODO: check if necessary
-        }
-        // TODO : recursion !!!!!
-
-        return baseScore - worstCounterScore; // TODO : discuss if the worstcount shouldn't have a coefficient (between 0 and 1)
-    }
-
-    /**
-     * Clone profond du plateau.
-     */
-    private Board cloneBoard(Board board) {
-        Board clone = new Board();
-
-        for (int i = 0; i < 8; ++i) {
-            for (int j = 0; j < 8; ++j) {
-                PieceColor color = board.getColorAt(i, j);
-                if (!color.isNone()) {
-                    clone.setColorAt(i, j, color);
-                }
-            }
+        List<int[]> adversaryMoves = cloned.getValidMovesForCurrentPlayer();
+        if (adversaryMoves.isEmpty()) {
+            System.out.println("Impossible output, normaly condition should be deleted if this is never displayed");
+            return baseScore; // Aucun coup adverse possible
         }
 
-        // Force le même joueur
-        clone.setPlayerTurn(board.getPlayerTurn());
+        int worstOutcome = Integer.MIN_VALUE;
+        // toujours 1 coup adverse au minimum puisque le cas où l'ennemi ne peut pas jouer est traîté
+        for (int[] advMove : adversaryMoves) {
+            int advX = advMove[0];
+            int advY = advMove[1];
 
-        return clone;
+            // Recurse sur la réponse adverse
+            int responseScore = simulateMoveWithDepth(cloned, advX, advY, depth - 1, this);
+            worstOutcome = Math.max(worstOutcome, responseScore);
+        }
+
+        return baseScore - worstOutcome; // impact négatif de l’adversaire
     }
 }

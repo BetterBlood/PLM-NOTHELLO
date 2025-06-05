@@ -28,8 +28,8 @@ public class PredictionEvaluator {
      * @param recursionDepth 1 = 1 coup, 2 = joueur -> adversaire -> joueur, etc.
      * @return Liste de coups sous forme [x, y, score de 1 (meilleur) à 5 (pire)]
      */
-    public List<int[]> evaluateMoves(int recursionDepth) {
-        return normalizeScores(currentStrategy.evaluate(board, recursionDepth));
+    public List<int[]> evaluateMoves(int recursionDepth, NotHelloStrategy strategy) {
+        return normalizeScores(currentStrategy.evaluate(board, recursionDepth, strategy));
     }
 
     /**
