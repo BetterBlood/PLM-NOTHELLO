@@ -7,6 +7,8 @@ import heigvd.plm.nothello.logic.*;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ItemListener;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -279,8 +281,52 @@ public class OthelloGUI extends JFrame {
     }
 
     private void playOneBotTurn() {
-        JOptionPane.showMessageDialog(this, "Tour de bot unique à implémenter !");
-        // TODO: Implémenter le coup unique entre bots (en fonction des stratégies + profondeur)
+        loadingLabel.setVisible(true);
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                NotHelloStrategy strategy = getSelectedStrategyForCurrentPlayer();
+                NotHelloStrategy opponentStrategy = getSelectedStrategyForOpponent();
+                int depth = getSelectedDepthForCurrentPlayer();
+                evaluator.setStrategy(strategy);
+
+                // TODO Est-ce qu'il faudrait utiliser la stratégie de l'adversaire ?
+                List<int[]> evaluations = evaluator.evaluateMoves(depth * 2 - 1, opponentStrategy);
+
+                if (!evaluations.isEmpty()) {
+                    int bestScore = Integer.MAX_VALUE;
+                    for (int[] eval : evaluations) {
+                        if (eval[2] < bestScore) {
+                            bestScore = eval[2];
+                        }
+                    }
+
+                    List<int[]> bestMoves = new ArrayList<>();
+                    for (int[] eval : evaluations) {
+                        if (eval[2] == bestScore) {
+                            bestMoves.add(eval);
+                        }
+                    }
+
+                    // Pour ajouter un peu de variété, on prend un des meilleurs coups au hasard
+                    Collections.shuffle(bestMoves);
+
+                    if (!bestMoves.isEmpty()) {
+                        int[] selectedMove = bestMoves.get(0);
+                        handleCellClick(selectedMove[0], selectedMove[1]);
+                    }
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                loadingLabel.setVisible(false);
+                updateBoardDisplay();
+                currentPlayerLabel.setText("Tour actuel : " + board.getPlayerTurn());
+            }
+        };
+        worker.execute();
     }
 
     /**
