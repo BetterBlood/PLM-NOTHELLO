@@ -36,6 +36,10 @@ public class OthelloGUI extends JFrame {
     private final JButton showPrediction = new JButton("Compute Strategy");
     private final JLabel loadingLabel = new JLabel();
 
+    // Possibilité d'ajouter un délai, en variable pour l'instant
+    // TODO: ajouter un slider pour le délai de simulation
+    private static final int SIMULATION_DELAY_MS = 0;
+
     public OthelloGUI(){
         this.board = new Board();
         this.evaluator = new PredictionEvaluator(this.board);
@@ -276,8 +280,68 @@ public class OthelloGUI extends JFrame {
 
 
     private void simulateGame() {
-        JOptionPane.showMessageDialog(this, "Simulation entre bots à implémenter !");
-        // TODO: Implémenter le jeu automatique entre bots
+        simulateButton.setEnabled(false);
+        stepByStepButton.setEnabled(false);
+
+        SwingWorker<Void, Void> simulationWorker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                while (!board.isOver()) {
+                    loadingLabel.setVisible(true);
+
+                    NotHelloStrategy strategy = getSelectedStrategyForCurrentPlayer();
+                    int depth = getSelectedDepthForCurrentPlayer();
+                    evaluator.setStrategy(strategy);
+                    List<int[]> evaluations = evaluator.evaluateMoves(depth * 2 - 1, strategy);
+
+                    if (!evaluations.isEmpty()) {
+                        int bestScore = Integer.MAX_VALUE;
+                        for (int[] eval : evaluations) {
+                            if (eval[2] < bestScore) {
+                                bestScore = eval[2];
+                            }
+                        }
+
+                        List<int[]> bestMoves = new ArrayList<>();
+                        for (int[] eval : evaluations) {
+                            if (eval[2] == bestScore) {
+                                bestMoves.add(eval);
+                            }
+                        }
+
+                        Collections.shuffle(bestMoves);
+
+                        if (!bestMoves.isEmpty()) {
+                            int[] selectedMove = bestMoves.get(0);
+
+                            final int moveX = selectedMove[0];
+                            final int moveY = selectedMove[1];
+
+                            SwingUtilities.invokeLater(() -> {
+                                handleCellClick(moveX, moveY);
+                                currentPlayerLabel.setText("Tour actuel : " + board.getPlayerTurn());
+                                loadingLabel.setVisible(false);
+                            });
+
+                            Thread.sleep(SIMULATION_DELAY_MS);
+                        }
+                    } else {
+                        // Le joueur courant n'a pas de coups valides, on passe au joueur suivant
+                        break;
+                    }
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                updateSimulationButtonState();
+                updateStepByStepButtonState();
+                loadingLabel.setVisible(false);
+            }
+        };
+
+        simulationWorker.execute();
     }
 
     private void playOneBotTurn() {
