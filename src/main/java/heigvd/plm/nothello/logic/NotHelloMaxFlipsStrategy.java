@@ -1,11 +1,13 @@
 package heigvd.plm.nothello.logic;
 
 import com.google.ortools.Loader;
-import com.google.ortools.sat.*;
+import com.google.ortools.linearsolver.MPConstraint;
+import com.google.ortools.linearsolver.MPObjective;
+import com.google.ortools.linearsolver.MPSolver;
+import com.google.ortools.linearsolver.MPVariable;
 import heigvd.plm.nothello.game.Board;
-import heigvd.plm.nothello.game.PieceColor;
+import heigvd.plm.nothello.game.Direction;
 
-import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -13,106 +15,163 @@ public class NotHelloMaxFlipsStrategy implements NotHelloStrategy {
     @Override
     public List<int[]> evaluate(Board board, int depth, NotHelloStrategy strategy) {
 
-        // 1. Cloner le plateau
-        // 2. Appliquer le coup du joueur
-        // 3. Si depth > 1, générer les coups de l’adversaire et évaluer leur meilleur contre-coup
-        // 4. Retourner une évaluation brute
-
-        System.out.println("NotHelloMaxFlipsStrategy:evaluate() with depth: " + depth + " for player: " + board.getPlayerTurn());
         Loader.loadNativeLibraries();
 
-        List<int[]> validMoves = board.getValidMovesForCurrentPlayer();
-        List<int[]> evaluatedMoves = new LinkedList<>();
+        MPSolver solver = MPSolver.createSolver("SCIP");
+        if (solver == null) {
+            throw new RuntimeException("Le solveur n'a pas pu être créé.");
+        }
 
-        for (int[] move : validMoves) {
-            int x = move[0];
-            int y = move[1];
+        Direction[] allDirections = Direction.getAllDirections();
+        int[][] boardMatrix = board.getBoardMatrix(board.getPlayerTurn());
 
-            // Pour chaque coup, on crée un solveur et une seule variable
-            CpModel model = new CpModel();
-            BoolVar moveVar = model.newBoolVar("move_" + x + "_" + y);
+        final int MAX_K = Board.BOARD_SIZE - 1;
 
-            int score = simulateMoveWithDepth(board, x, y, depth, strategy);
+        // Variables de décision
+        // - moveVars[x][y] : 1 si le coup (x, y) est joué, 0 sinon
+        // - flipVars[x][y][direction][k] : 1 si le coup (x, y) retourne k - 1 pièces dans la direction donnée, 0 sinon
+        // - flipMoveVars[x][y][direction][k] : 1 si le coup (x, y) retourne k - 1 pièces dans la direction donnée et est joué, 0 sinon
+        MPVariable[][] moveVars = new MPVariable[Board.BOARD_SIZE][Board.BOARD_SIZE];
+        MPVariable[][][][] flipVars = new MPVariable[Board.BOARD_SIZE][Board.BOARD_SIZE][allDirections.length][MAX_K + 1];
+        MPVariable[][][][] flipMoveVars = new MPVariable[Board.BOARD_SIZE][Board.BOARD_SIZE][allDirections.length][MAX_K + 1];
 
-            // Score objectif pour CE coup uniquement
-            model.maximize(LinearExpr.weightedSum(new BoolVar[]{moveVar}, new long[]{score}));
-            model.addEquality(moveVar, 1); // on force à "jouer" ce coup
+        for (int i = 0; i < Board.BOARD_SIZE; i++) {
+            for (int j = 0; j < Board.BOARD_SIZE; j++) {
+                // Si la case est vide, on crée les variables de décision
+                if (boardMatrix[i][j] == EMPTY) {
+                    String varName = "move_" + i + "_" + j;
+                    moveVars[i][j] = solver.makeBoolVar(varName);
 
-            CpSolver solver = new CpSolver();
-            CpSolverStatus status = solver.solve(model);
+                    // Pour chaque direction et distance k, on crée les variables de flip
+                    for (int d = 0; d < allDirections.length; d++) {
+                        for (int k = 2; k <= MAX_K; k++) {
+                            // Pour l'efficacité, on vérifie si la longueur de flip est valide
+                            if (isValidFlipLength(i, j, allDirections[d].getX(), allDirections[d].getY(), k)) {
+                                String flipVarName = "flip_" + i + "_" + j + "_" + d + "_" + k;
+                                flipVars[i][j][d][k] = solver.makeBoolVar(flipVarName);
 
-            if (status == CpSolverStatus.OPTIMAL || status == CpSolverStatus.FEASIBLE) {
-                evaluatedMoves.add(new int[]{x, y, score});
+                                String fmVarName = "flipmove_" + i + "_" + j + "_" + d + "_" + k;
+                                flipMoveVars[i][j][d][k] = solver.makeBoolVar(fmVarName);
+
+                                MPConstraint c1 = solver.makeConstraint(0.0, 1.0);
+                                c1.setCoefficient(flipMoveVars[i][j][d][k], 1.0);
+                                c1.setCoefficient(flipVars[i][j][d][k], -1.0);
+
+                                MPConstraint c2 = solver.makeConstraint(0.0, 1.0);
+                                c2.setCoefficient(flipMoveVars[i][j][d][k], 1.0);
+                                c2.setCoefficient(moveVars[i][j], -1.0);
+
+                                MPConstraint c3 = solver.makeConstraint(-1.0, Double.POSITIVE_INFINITY);
+                                c3.setCoefficient(flipMoveVars[i][j][d][k], 1.0);
+                                c3.setCoefficient(flipVars[i][j][d][k], -1.0);
+                                c3.setCoefficient(moveVars[i][j], -1.0);
+
+                                // Add flippable direction constraints
+                                addFlipConstraints(boardMatrix, solver, i, j, allDirections[d].getX(), allDirections[d].getY(), k, flipVars[i][j][d][k]);
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        System.out.print("Possible moves, evaluatedMoves.size(): " + evaluatedMoves.size() + ", scores: ");
-        for (int[] evalMove : evaluatedMoves) {
-            System.out.print(Arrays.toString(evalMove) + " ");
-        }
-        System.out.println();
+        // Constraint: A move is valid if at least one direction is flippable
+        for (int i = 0; i < Board.BOARD_SIZE; i++) {
+            for (int j = 0; j < Board.BOARD_SIZE; j++) {
+                if (boardMatrix[i][j] == EMPTY && moveVars[i][j] != null) {
+                    MPConstraint validMove = solver.makeConstraint(0.0, 0.0);
+                    validMove.setCoefficient(moveVars[i][j], 1.0);
 
-        return evaluatedMoves;
+                    // Subtract all flip variables for this cell
+                    for (int d = 0; d < allDirections.length; d++) {
+                        for (int k = 2; k <= MAX_K; k++) {
+                            if (flipVars[i][j][d][k] != null) {
+                                validMove.setCoefficient(flipVars[i][j][d][k], -1.0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Constraint: Make exactly one move
+        MPConstraint makeOneMove = solver.makeConstraint(1.0, 1.0);
+        for (int i = 0; i < Board.BOARD_SIZE; i++) {
+            for (int j = 0; j < Board.BOARD_SIZE; j++) {
+                if (moveVars[i][j] != null) {
+                    makeOneMove.setCoefficient(moveVars[i][j], 1.0);
+                }
+            }
+        }
+
+        MPObjective objective = solver.objective();
+        objective.setMaximization();
+
+        for (int i = 0; i < Board.BOARD_SIZE; i++) {
+            for (int j = 0; j < Board.BOARD_SIZE; j++) {
+                for (int d = 0; d < allDirections.length; d++) {
+                    for (int k = 2; k <= MAX_K; k++) {
+                        if (flipMoveVars[i][j][d][k] != null) {
+                            objective.setCoefficient(flipMoveVars[i][j][d][k], k - 1); // k-1 flipped pieces
+                        }
+                    }
+                }
+            }
+        }
+
+        MPSolver.ResultStatus status = solver.solve();
+
+        if (status == MPSolver.ResultStatus.OPTIMAL || status == MPSolver.ResultStatus.FEASIBLE) {
+            for (int i = 0; i < Board.BOARD_SIZE; i++) {
+                for (int j = 0; j < Board.BOARD_SIZE; j++) {
+                    if (moveVars[i][j] != null && moveVars[i][j].solutionValue() > 0.5) {
+                        return List.of(new int[] {i, j, 0});
+                    }
+                }
+            }
+        }
+
+        System.out.println("No solution found");
+        return new LinkedList<>();
+    }
+
+    private boolean isValidFlipLength(int i, int j, int dx, int dy, int k) {
+        for (int n = 1; n <= k; n++) {
+            int ni = i + n * dx;
+            int nj = j + n * dy;
+
+            if (ni < 0 || ni >= Board.BOARD_SIZE || nj < 0 || nj >= Board.BOARD_SIZE) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
-     * Simule le coup joué et évalue récursivement jusqu'à la profondeur donnée.
+     * Adds constraints to ensure a valid flip in the specified direction.
      */
-    private int simulateMoveWithDepth(Board originalBoard, int x, int y, int depth, NotHelloStrategy enemy_strategy) {
-        System.out.println("simulateMoveWithDepth(x=" + x + ", y=" + y + ", depth=" + depth + ", player=" + originalBoard.getPlayerTurn() + ")");
-        if (depth <= 0) return 0;
-        if (depth == 1) return originalBoard.getMoveScore(x, y, originalBoard.getPlayerTurn());
+    private void addFlipConstraints(int[][] boardMatrix, MPSolver solver, int i, int j, int dx, int dy, int k, MPVariable flipVar) {
+        // Check if all cells from 1 to k-1 are opponent pieces
+        for (int n = 1; n < k; n++) {
+            int ni = i + n * dx;
+            int nj = j + n * dy;
 
-        // odd : player, otherwise: opponent
-
-        // Clone du plateau
-        Board cloned = cloneBoard(originalBoard);
-        PieceColor currentPlayer = cloned.getPlayerTurn();
-
-        int baseScore = originalBoard.getMoveScore(x, y, currentPlayer);
-        // Joue le coup sur le plateau cloné
-        boolean movePlayed = cloned.playAt(x, y);
-        if (!movePlayed) {
-            System.out.println(cloned.toString());
-            System.out.println("Coup invalide (" + x + ";" + y + ") à depth " + depth); // wtf ??
-            return 0;
-        }
-
-        if (cloned.getPlayerTurn() == currentPlayer) { // opponent can't play
-            PredictionEvaluator playerAgainEvaluator = new PredictionEvaluator(cloned);
-            playerAgainEvaluator.setStrategy(this);
-
-            List<int[]> nextMoves = cloned.getValidMovesForCurrentPlayer();
-            if (nextMoves.isEmpty()) return baseScore;
-
-            int bestResponse = 0;
-            for (int[] againMove : nextMoves) {
-                int res = simulateMoveWithDepth(cloned, againMove[0], againMove[1], depth - 2, enemy_strategy);
-                bestResponse = Math.max(bestResponse, res);
+            if (boardMatrix[ni][nj] != OPP_COLOR) {
+                // If any cell doesn't have opponent's piece, this flip is invalid
+                MPConstraint c = solver.makeConstraint(0.0, 0.0);
+                c.setCoefficient(flipVar, 1.0);
+                return;
             }
-            return baseScore + bestResponse;
         }
 
-        PredictionEvaluator enemyEvaluator = new PredictionEvaluator(cloned);
-        enemyEvaluator.setStrategy(enemy_strategy);
+        // Check if cell k has my color
+        int ki = i + k * dx;
+        int kj = j + k * dy;
 
-        List<int[]> adversaryMoves = cloned.getValidMovesForCurrentPlayer();
-        if (adversaryMoves.isEmpty()) {
-            System.out.println("Impossible output, normaly condition should be deleted if this is never displayed");
-            return baseScore; // Aucun coup adverse possible
+        if (boardMatrix[ki][kj] != MY_COLOR) {
+            // If the last cell doesn't have my piece, this flip is invalid
+            MPConstraint c = solver.makeConstraint(0.0, 0.0);
+            c.setCoefficient(flipVar, 1.0);
         }
-
-        int worstOutcome = Integer.MIN_VALUE;
-        // toujours 1 coup adverse au minimum puisque le cas où l'ennemi ne peut pas jouer est traîté
-        for (int[] advMove : adversaryMoves) {
-            int advX = advMove[0];
-            int advY = advMove[1];
-
-            // Recurse sur la réponse adverse
-            int responseScore = simulateMoveWithDepth(cloned, advX, advY, depth - 1, this);
-            worstOutcome = Math.max(worstOutcome, responseScore);
-        }
-
-        return baseScore - worstOutcome; // impact négatif de l’adversaire
     }
 }

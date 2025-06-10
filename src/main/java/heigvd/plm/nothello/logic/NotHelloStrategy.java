@@ -6,6 +6,11 @@ import heigvd.plm.nothello.game.PieceColor;
 import java.util.List;
 
 public interface NotHelloStrategy {
+    // Conventions utilisées dans les stratégies :
+    public final int MY_COLOR = -1;
+    public final int OPP_COLOR = 1;
+    public final int EMPTY = 0;
+
     /**
      * Évalue le score d'un coup à la position (x, y) pour un joueur donné, à une certaine profondeur.
      *
