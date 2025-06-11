@@ -12,69 +12,55 @@ import heigvd.plm.nothello.game.Direction;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Implementation of NotHello strategy using CP-SAT solver.
- * This class finds the optimal move on a NotHello board by maximizing
- * the number of opponent's pieces flipped.
- */
 public class NotHelloConstraintStrategy implements NotHelloStrategy {
-    // Color constants used in the strategy
+
     public static final int MY_COLOR = -1;
     public static final int OPP_COLOR = 1;
     public static final int EMPTY = 0;
 
     /**
-     * Evaluates the current board state and returns the coordinates of the best move.
-     * Uses CP-SAT solver to find the move that maximizes the number of flipped pieces.
+     * Calcule le meilleur mouvement possible pour le joueur courant.
+     * Le meilleur mouvement est celui qui maximise le nombre de pièces adverses retournées.
      *
-     * @param board The current game board
-     * @return An array containing the coordinates [x, y] of the best move, or an empty array if no valid move exists
+     * @param board Le plateau de jeu actuel
+     * @return un tableau des coordonnées [x, y] du meilleur coup, ou null si aucun coup n'est possible.
      */
     @Override
     public int[] evaluate(Board board) {
-        // Load the OR-Tools native libraries
         Loader.loadNativeLibraries();
 
-        // Create a CP-SAT model
         CpModel model = new CpModel();
 
         Direction[] allDirections = Direction.getAllDirections();
         int[][] boardMatrix = board.getBoardMatrix(board.getPlayerTurn());
         final int MAX_K = Board.BOARD_SIZE - 1;
 
-        // Decision variables:
-        // - moveVars[x][y]: 1 if move (x,y) is played, 0 otherwise
-        // - flipVars[x][y][direction][k]: 1 if move (x,y) flips k-1 pieces in the given direction, 0 otherwise
-        // - flipMoveVars[x][y][direction][k]: 1 if move (x,y) flips k-1 pieces in the given direction AND is played, 0 otherwise
+        // Variables de décision:
+        // - moveVars[x][y]: 1 si le mouvement (x,y) est joué, 0 sinon
+        // - flipVars[x][y][direction][k]: 1 si le mouvement (x,y) retourne k-1 pièces dans la direction d, 0 sinon
+        // - flipMoveVars[x][y][direction][k]: 1 si le mouvement (x,y) retourne k-1 dans la direction et est joué, 0 sinon
         IntVar[][] moveVars = new IntVar[Board.BOARD_SIZE][Board.BOARD_SIZE];
         IntVar[][][][] flipVars = new IntVar[Board.BOARD_SIZE][Board.BOARD_SIZE][allDirections.length][MAX_K + 1];
         IntVar[][][][] flipMoveVars = new IntVar[Board.BOARD_SIZE][Board.BOARD_SIZE][allDirections.length][MAX_K + 1];
 
-        // Track all move variables for the "exactly one move" constraint
         IntVar[] allMoveVars = new IntVar[Board.BOARD_SIZE * Board.BOARD_SIZE];
         int moveVarCount = 0;
 
-        // Define objective expression to maximize flipped pieces
         LinearExpr objectiveExpr = LinearExpr.constant(0);
 
-        // Create variables and constraints for each possible move position
         for (int i = 0; i < Board.BOARD_SIZE; i++) {
             for (int j = 0; j < Board.BOARD_SIZE; j++) {
-                // Only consider empty cells as potential moves
                 if (boardMatrix[i][j] == EMPTY) {
                     String moveVarName = String.format("move_%d_%d", i, j);
                     moveVars[i][j] = model.newBoolVar(moveVarName);
                     allMoveVars[moveVarCount++] = moveVars[i][j];
 
-                    // Track valid flip directions for this move
                     LinearExpr validDirectionsExpr = LinearExpr.constant(0);
 
-                    // For each direction and flip length, create flip variables
                     for (int d = 0; d < allDirections.length; d++) {
                         Direction dir = allDirections[d];
 
                         for (int k = 2; k <= MAX_K; k++) {
-                            // Only create variables if this flip length is geometrically possible
                             if (isValidFlipLength(i, j, dir.getX(), dir.getY(), k)) {
                                 String flipVarName = String.format("flip_%d_%d_%d_%d", i, j, d, k);
                                 flipVars[i][j][d][k] = model.newBoolVar(flipVarName);
@@ -82,14 +68,9 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
                                 String flipMoveVarName = String.format("flipmove_%d_%d_%d_%d", i, j, d, k);
                                 flipMoveVars[i][j][d][k] = model.newBoolVar(flipMoveVarName);
 
-                                // Add flip move constraints:
-                                // 1. flipMove <= flip (flipMove implies flip)
                                 model.addLessOrEqual(flipMoveVars[i][j][d][k], flipVars[i][j][d][k]);
-
-                                // 2. flipMove <= move (flipMove implies move)
                                 model.addLessOrEqual(flipMoveVars[i][j][d][k], moveVars[i][j]);
 
-                                // 3. flipMove >= flip + move - 1 (if both flip and move are 1, then flipMove must be 1)
                                 model.addGreaterOrEqual(
                                         LinearExpr.sum(new LinearExpr[]{
                                                 LinearExpr.term(flipMoveVars[i][j][d][k], 1),
@@ -98,16 +79,14 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
                                         LinearExpr.sum(new IntVar[]{flipVars[i][j][d][k], moveVars[i][j]})
                                 );
 
-                                // Add appropriate flip constraints based on the board state
                                 addFlipConstraints(boardMatrix, model, i, j, dir.getX(), dir.getY(), k, flipVars[i][j][d][k]);
 
-                                // Track this as a valid direction for this move
                                 validDirectionsExpr = LinearExpr.sum(new LinearExpr[]{
                                         validDirectionsExpr,
                                         LinearExpr.term(flipVars[i][j][d][k], 1)
                                 });
 
-                                // Add to objective: each flipMove contributes (k-1) to the objective
+                                // Ajouter à l'objectif, chaque flip ajoute k-1 points à la fct objectif
                                 objectiveExpr = LinearExpr.sum(new LinearExpr[]{
                                         objectiveExpr,
                                         LinearExpr.term(flipMoveVars[i][j][d][k], k - 1)
@@ -116,8 +95,6 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
                         }
                     }
 
-                    // A move is valid if and only if at least one direction allows flipping
-                    // First, collect all flip variables for this move into an array
                     List<IntVar> validFlipsForThisMove = new ArrayList<>();
                     for (int d = 0; d < allDirections.length; d++) {
                         for (int k = 2; k <= MAX_K; k++) {
@@ -127,36 +104,31 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
                         }
                     }
 
-                    // If there are any potential flips for this move
                     if (!validFlipsForThisMove.isEmpty()) {
                         IntVar[] flipVarsArray = validFlipsForThisMove.toArray(new IntVar[0]);
 
-                        // moveVars[i][j] = 1 if the sum of all valid flips is at least 1
+                        // moveVars[i][j] = 1 si la somme des flips valides (en boolean) east >= 1
                         model.addMaxEquality(moveVars[i][j], flipVarsArray);
                     }
                     else {
-                        // If no potential flips, the move is invalid
+                        // Si pas de flips, alors le mouvement n'est pas valide
                         model.addEquality(moveVars[i][j], 0);
                     }
                 }
             }
         }
 
-        // Constraint: Exactly one move must be played
-        // Adjust the array size to match the actual number of variables we created
+        // Ajoute la contrainte d'unicité du mouvement
         if (moveVarCount > 0) {
             IntVar[] actualMoveVars = new IntVar[moveVarCount];
             System.arraycopy(allMoveVars, 0, actualMoveVars, 0, moveVarCount);
             model.addEquality(LinearExpr.sum(actualMoveVars), 1);
 
-            // Set the objective to maximize the number of flipped pieces
             model.maximize(objectiveExpr);
 
-            // Solve the model
             CpSolver solver = new CpSolver();
             CpSolverStatus status = solver.solve(model);
 
-            // Process the result if optimal or feasible solution found
             if (status == CpSolverStatus.OPTIMAL || status == CpSolverStatus.FEASIBLE) {
                 for (int i = 0; i < Board.BOARD_SIZE; i++) {
                     for (int j = 0; j < Board.BOARD_SIZE; j++) {
@@ -169,19 +141,18 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
         }
 
         System.out.println("No valid move found.");
-        return new int[] {};
+        return null;
     }
 
     /**
-     * Checks if a flip of length k is geometrically valid from position (i,j)
-     * in direction (dx,dy).
+     * Vérifie si un flip de longueur k est valide à partir de la position (i,j) dans la direction (dx,dy).
      *
-     * @param i Starting row coordinate
-     * @param j Starting column coordinate
-     * @param dx Row direction (-1, 0, 1)
-     * @param dy Column direction (-1, 0, 1)
-     * @param k Flip length
-     * @return true if the flip length is valid, false otherwise
+     * @param i coordonnée de la ligne
+     * @param j coordonnée de la colonne
+     * @param dx direction selon x
+     * @param dy direction selon y
+     * @param k distance du flip
+     * @return true si le flip de longueur k est valide, false sinon
      */
     private boolean isValidFlipLength(int i, int j, int dx, int dy, int k) {
         for (int n = 1; n <= k; n++) {
@@ -197,33 +168,28 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
     }
 
     /**
-     * Adds constraints to determine if a flip is valid in a given direction.
-     * A flip is valid if:
-     * 1. All cells from 1 to k-1 contain opponent pieces
-     * 2. The cell at distance k contains a piece of the current player
+     * Ajoute les contraintes pour vérifier si un flip est valide dans une direction donnée avec une distance k.
      *
-     * @param boardMatrix The current board state
-     * @param model The CP model to add constraints to
-     * @param i Starting row coordinate
-     * @param j Starting column coordinate
-     * @param dx Row direction (-1, 0, 1)
-     * @param dy Column direction (-1, 0, 1)
-     * @param k Flip length
-     * @param flipVar The variable representing if this flip is valid
+     * @param boardMatrix Le plateau de jeu sous forme de matrice
+     * @param model le modèle
+     * @param i coordonnée de la ligne
+     * @param j coordonnée de la colonne
+     * @param dx direction selon x
+     * @param dy direction selon y
+     * @param k distance du flip
+     * @param flipVar La variable de flip à contraindre
      */
     private void addFlipConstraints(int[][] boardMatrix, CpModel model, int i, int j, int dx, int dy, int k, IntVar flipVar) {
-        // Check if all cells from 1 to k-1 contain opponent pieces
+        // Les cellules de 1 à k-1 doivent être des pièces de l'adversaire
         for (int n = 1; n < k; n++) {
             if (boardMatrix[i + n * dx][j + n * dy] != OPP_COLOR) {
-                // If any cell doesn't contain an opponent piece, this flip is invalid
                 model.addEquality(flipVar, 0);
                 return;
             }
         }
 
-        // Check if the cell at distance k contains a piece of the current player
+        // La cellule à distance k doit être une pièce du joueur actuel
         if (boardMatrix[i + k * dx][j + k * dy] != MY_COLOR) {
-            // If the cell at distance k doesn't contain a piece of the current player, this flip is invalid
             model.addEquality(flipVar, 0);
         }
     }
