@@ -1,5 +1,6 @@
 package heigvd.plm.nothello.game;
 
+import heigvd.plm.nothello.logic.NotHelloConstraintStrategy;
 import heigvd.plm.nothello.logic.NotHelloStrategy;
 
 import java.sql.SQLOutput;
@@ -266,11 +267,11 @@ public class Board {
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
                 if (board[i][j] == PieceColor.NONE) {
-                    matrix[i][j] = NotHelloStrategy.EMPTY;
+                    matrix[i][j] = NotHelloConstraintStrategy.EMPTY;
                 } else if (board[i][j] == forColor) {
-                    matrix[i][j] = NotHelloStrategy.MY_COLOR;
+                    matrix[i][j] = NotHelloConstraintStrategy.MY_COLOR;
                 } else {
-                    matrix[i][j] = NotHelloStrategy.OPP_COLOR;
+                    matrix[i][j] = NotHelloConstraintStrategy.OPP_COLOR;
                 }
             }
         }

@@ -1,177 +1,114 @@
 package heigvd.plm.nothello.logic;
 
 import com.google.ortools.Loader;
-import com.google.ortools.linearsolver.MPConstraint;
-import com.google.ortools.linearsolver.MPObjective;
-import com.google.ortools.linearsolver.MPSolver;
-import com.google.ortools.linearsolver.MPVariable;
+import com.google.ortools.sat.*;
 import heigvd.plm.nothello.game.Board;
-import heigvd.plm.nothello.game.Direction;
+import heigvd.plm.nothello.game.PieceColor;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
 public class NotHelloMaxFlipsStrategy implements NotHelloStrategy {
+
     @Override
-    public List<int[]> evaluate(Board board, int depth, NotHelloStrategy strategy) {
-
-        Loader.loadNativeLibraries();
-
-        MPSolver solver = MPSolver.createSolver("SCIP");
-        if (solver == null) {
-            throw new RuntimeException("Le solveur n'a pas pu être créé.");
+    public int[] evaluate(Board board) {
+        List<int[]> evaluations = evaluateAllMoves(board);
+        if (evaluations.isEmpty()) {
+            return null; // Aucun coup possible
         }
-
-        Direction[] allDirections = Direction.getAllDirections();
-        int[][] boardMatrix = board.getBoardMatrix(board.getPlayerTurn());
-
-        final int MAX_K = Board.BOARD_SIZE - 1;
-
-        // Variables de décision
-        // - moveVars[x][y] : 1 si le coup (x, y) est joué, 0 sinon
-        // - flipVars[x][y][direction][k] : 1 si le coup (x, y) retourne k - 1 pièces dans la direction donnée, 0 sinon
-        // - flipMoveVars[x][y][direction][k] : 1 si le coup (x, y) retourne k - 1 pièces dans la direction donnée et est joué, 0 sinon
-        MPVariable[][] moveVars = new MPVariable[Board.BOARD_SIZE][Board.BOARD_SIZE];
-        MPVariable[][][][] flipVars = new MPVariable[Board.BOARD_SIZE][Board.BOARD_SIZE][allDirections.length][MAX_K + 1];
-        MPVariable[][][][] flipMoveVars = new MPVariable[Board.BOARD_SIZE][Board.BOARD_SIZE][allDirections.length][MAX_K + 1];
-
-        for (int i = 0; i < Board.BOARD_SIZE; i++) {
-            for (int j = 0; j < Board.BOARD_SIZE; j++) {
-                // Si la case est vide, on crée les variables de décision
-                if (boardMatrix[i][j] == EMPTY) {
-                    String varName = "move_" + i + "_" + j;
-                    moveVars[i][j] = solver.makeBoolVar(varName);
-
-                    // Pour chaque direction et distance k, on crée les variables de flip
-                    for (int d = 0; d < allDirections.length; d++) {
-                        for (int k = 2; k <= MAX_K; k++) {
-                            // Pour l'efficacité, on vérifie si la longueur de flip est valide
-                            if (isValidFlipLength(i, j, allDirections[d].getX(), allDirections[d].getY(), k)) {
-                                String flipVarName = "flip_" + i + "_" + j + "_" + d + "_" + k;
-                                flipVars[i][j][d][k] = solver.makeBoolVar(flipVarName);
-
-                                String fmVarName = "flipmove_" + i + "_" + j + "_" + d + "_" + k;
-                                flipMoveVars[i][j][d][k] = solver.makeBoolVar(fmVarName);
-
-                                MPConstraint c1 = solver.makeConstraint(0.0, 1.0);
-                                c1.setCoefficient(flipMoveVars[i][j][d][k], 1.0);
-                                c1.setCoefficient(flipVars[i][j][d][k], -1.0);
-
-                                MPConstraint c2 = solver.makeConstraint(0.0, 1.0);
-                                c2.setCoefficient(flipMoveVars[i][j][d][k], 1.0);
-                                c2.setCoefficient(moveVars[i][j], -1.0);
-
-                                MPConstraint c3 = solver.makeConstraint(-1.0, Double.POSITIVE_INFINITY);
-                                c3.setCoefficient(flipMoveVars[i][j][d][k], 1.0);
-                                c3.setCoefficient(flipVars[i][j][d][k], -1.0);
-                                c3.setCoefficient(moveVars[i][j], -1.0);
-
-                                // Add flippable direction constraints
-                                addFlipConstraints(boardMatrix, solver, i, j, allDirections[d].getX(), allDirections[d].getY(), k, flipVars[i][j][d][k]);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Constraint: A move is valid if at least one direction is flippable
-        for (int i = 0; i < Board.BOARD_SIZE; i++) {
-            for (int j = 0; j < Board.BOARD_SIZE; j++) {
-                if (boardMatrix[i][j] == EMPTY && moveVars[i][j] != null) {
-                    MPConstraint validMove = solver.makeConstraint(0.0, 0.0);
-                    validMove.setCoefficient(moveVars[i][j], 1.0);
-
-                    // Subtract all flip variables for this cell
-                    for (int d = 0; d < allDirections.length; d++) {
-                        for (int k = 2; k <= MAX_K; k++) {
-                            if (flipVars[i][j][d][k] != null) {
-                                validMove.setCoefficient(flipVars[i][j][d][k], -1.0);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Constraint: Make exactly one move
-        MPConstraint makeOneMove = solver.makeConstraint(1.0, 1.0);
-        for (int i = 0; i < Board.BOARD_SIZE; i++) {
-            for (int j = 0; j < Board.BOARD_SIZE; j++) {
-                if (moveVars[i][j] != null) {
-                    makeOneMove.setCoefficient(moveVars[i][j], 1.0);
-                }
-            }
-        }
-
-        MPObjective objective = solver.objective();
-        objective.setMaximization();
-
-        for (int i = 0; i < Board.BOARD_SIZE; i++) {
-            for (int j = 0; j < Board.BOARD_SIZE; j++) {
-                for (int d = 0; d < allDirections.length; d++) {
-                    for (int k = 2; k <= MAX_K; k++) {
-                        if (flipMoveVars[i][j][d][k] != null) {
-                            objective.setCoefficient(flipMoveVars[i][j][d][k], k - 1); // k-1 flipped pieces
-                        }
-                    }
-                }
-            }
-        }
-
-        MPSolver.ResultStatus status = solver.solve();
-
-        if (status == MPSolver.ResultStatus.OPTIMAL || status == MPSolver.ResultStatus.FEASIBLE) {
-            for (int i = 0; i < Board.BOARD_SIZE; i++) {
-                for (int j = 0; j < Board.BOARD_SIZE; j++) {
-                    if (moveVars[i][j] != null && moveVars[i][j].solutionValue() > 0.5) {
-                        return List.of(new int[] {i, j, 0});
-                    }
-                }
-            }
-        }
-
-        System.out.println("No solution found");
-        return new LinkedList<>();
+        // Sélectionne le coup avec le score le plus élevé
+        evaluations.sort((a, b) -> Integer.compare(b[2], a[2]));
+        int[] bestMove = evaluations.get(0);
+        return new int[]{bestMove[0], bestMove[1]};
     }
 
-    private boolean isValidFlipLength(int i, int j, int dx, int dy, int k) {
-        for (int n = 1; n <= k; n++) {
-            int ni = i + n * dx;
-            int nj = j + n * dy;
-
-            if (ni < 0 || ni >= Board.BOARD_SIZE || nj < 0 || nj >= Board.BOARD_SIZE) {
-                return false;
-            }
-        }
-        return true;
+    public List<int[]> getNormalizedScores(Board board) {
+        return normalizeScores(evaluateAllMoves(board));
     }
 
     /**
-     * Adds constraints to ensure a valid flip in the specified direction.
+     * Évalue le score d'un coup à la position (x, y) pour un joueur donné, à une certaine profondeur.
+     *
+     * @param board    L'état actuel du plateau
+     * @return Un score entier représentant la qualité du coup
      */
-    private void addFlipConstraints(int[][] boardMatrix, MPSolver solver, int i, int j, int dx, int dy, int k, MPVariable flipVar) {
-        // Check if all cells from 1 to k-1 are opponent pieces
-        for (int n = 1; n < k; n++) {
-            int ni = i + n * dx;
-            int nj = j + n * dy;
+    private List<int[]> evaluateAllMoves(Board board) {
 
-            if (boardMatrix[ni][nj] != OPP_COLOR) {
-                // If any cell doesn't have opponent's piece, this flip is invalid
-                MPConstraint c = solver.makeConstraint(0.0, 0.0);
-                c.setCoefficient(flipVar, 1.0);
-                return;
+        // 1. Cloner le plateau
+        // 2. Appliquer le coup du joueur
+        // 3. Retourner une évaluation brute
+
+        System.out.println("NotHelloMaxFlipsStrategy:evaluate() for player: " + board.getPlayerTurn());
+        Loader.loadNativeLibraries();
+
+        List<int[]> validMoves = board.getValidMovesForCurrentPlayer();
+        List<int[]> evaluatedMoves = new LinkedList<>();
+
+        for (int[] move : validMoves) {
+            int x = move[0];
+            int y = move[1];
+
+            // Pour chaque coup, on crée un solveur et une seule variable
+            CpModel model = new CpModel();
+            BoolVar moveVar = model.newBoolVar("move_" + x + "_" + y);
+
+            int score = board.getMoveScore(x, y, board.getPlayerTurn());
+
+            // Score objectif pour CE coup uniquement
+            model.maximize(LinearExpr.weightedSum(new BoolVar[]{moveVar}, new long[]{score}));
+            model.addEquality(moveVar, 1); // on force à "jouer" ce coup
+
+            CpSolver solver = new CpSolver();
+            CpSolverStatus status = solver.solve(model);
+
+            if (status == CpSolverStatus.OPTIMAL || status == CpSolverStatus.FEASIBLE) {
+                evaluatedMoves.add(new int[]{x, y, score});
             }
         }
 
-        // Check if cell k has my color
-        int ki = i + k * dx;
-        int kj = j + k * dy;
-
-        if (boardMatrix[ki][kj] != MY_COLOR) {
-            // If the last cell doesn't have my piece, this flip is invalid
-            MPConstraint c = solver.makeConstraint(0.0, 0.0);
-            c.setCoefficient(flipVar, 1.0);
+        System.out.print("Possible moves, evaluatedMoves.size(): " + evaluatedMoves.size() + ", scores: ");
+        for (int[] evalMove : evaluatedMoves) {
+            System.out.print(Arrays.toString(evalMove) + " ");
         }
+        System.out.println();
+
+        return evaluatedMoves;
+    }
+
+
+    /**
+     * Normalise les scores sur une échelle de 1 (meilleur) à 5 (pire).
+     * @param evaluations liste de coups (x, y, rawScore)
+     * @return liste de coups (x, y, normalizedScore)
+     */
+    private List<int[]> normalizeScores(List<int[]> evaluations) {
+        if (evaluations.isEmpty()) return evaluations;
+
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+
+        for (int[] eval : evaluations) {
+            int score = eval[2];
+            if (score < min) min = score;
+            if (score > max) max = score;
+        }
+
+        List<int[]> normalizedList = new ArrayList<>();
+        for (int[] eval : evaluations) {
+            int x = eval[0];
+            int y = eval[1];
+            int rawScore = eval[2];
+            int normalized = 3;
+
+            if (max != min) {
+                normalized = 1 + (int) Math.round(4.0 * (max - rawScore) / (double) (max - min)); // Inversé pour que 1 = meilleur
+            }
+
+            normalizedList.add(new int[]{x, y, normalized});
+        }
+
+        return normalizedList;
     }
 }

@@ -12,14 +12,12 @@ public interface NotHelloStrategy {
     public final int EMPTY = 0;
 
     /**
-     * Évalue le score d'un coup à la position (x, y) pour un joueur donné, à une certaine profondeur.
+     * Retourne le meilleur mouvement possible pour le joueur courant.
      *
      * @param board    L'état actuel du plateau
-     * @param depth    La profondeur de récursion
-     * @param strategy la stratégie de l'adversaire
-     * @return Un score entier représentant la qualité du coup
+     * @return Un tableau {x, y} représentant les coordonnées du meilleur coup
      */
-    List<int[]> evaluate(Board board, int depth, NotHelloStrategy strategy);
+    int[] evaluate(Board board);
 
     /**
      * Clone profond du plateau.
