@@ -43,8 +43,8 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
             for (int j = 0; j < Board.BOARD_SIZE; j++) {
                 // Si la case est vide, on crée les variables de décision
                 if (boardMatrix[i][j] == EMPTY) {
-                    String varName = "move_" + i + "_" + j;
-                    moveVars[i][j] = solver.makeBoolVar(varName);
+                    String moveVarName = "move_" + i + "_" + j;
+                    moveVars[i][j] = solver.makeBoolVar(moveVarName);
 
                     // Pour chaque direction et distance k, on crée les variables de flip
                     for (int d = 0; d < allDirections.length; d++) {
@@ -54,8 +54,8 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
                                 String flipVarName = "flip_" + i + "_" + j + "_" + d + "_" + k;
                                 flipVars[i][j][d][k] = solver.makeBoolVar(flipVarName);
 
-                                String fmVarName = "flipmove_" + i + "_" + j + "_" + d + "_" + k;
-                                flipMoveVars[i][j][d][k] = solver.makeBoolVar(fmVarName);
+                                String flipMoveVarName = "flipmove_" + i + "_" + j + "_" + d + "_" + k;
+                                flipMoveVars[i][j][d][k] = solver.makeBoolVar(flipMoveVarName);
 
                                 MPConstraint c1 = solver.makeConstraint(0.0, 1.0);
                                 c1.setCoefficient(flipMoveVars[i][j][d][k], 1.0);
@@ -70,7 +70,6 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
                                 c3.setCoefficient(flipVars[i][j][d][k], -1.0);
                                 c3.setCoefficient(moveVars[i][j], -1.0);
 
-                                // Add flippable direction constraints
                                 addFlipConstraints(boardMatrix, solver, i, j, allDirections[d].getX(), allDirections[d].getY(), k, flipVars[i][j][d][k]);
                             }
                         }
@@ -79,14 +78,13 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
             }
         }
 
-        // Constraint: A move is valid if at least one direction is flippable
+        // Contrainte: un mouvement est valide ssi au moins une direction est valide
         for (int i = 0; i < Board.BOARD_SIZE; i++) {
             for (int j = 0; j < Board.BOARD_SIZE; j++) {
                 if (boardMatrix[i][j] == EMPTY && moveVars[i][j] != null) {
                     MPConstraint validMove = solver.makeConstraint(0.0, 0.0);
                     validMove.setCoefficient(moveVars[i][j], 1.0);
 
-                    // Subtract all flip variables for this cell
                     for (int d = 0; d < allDirections.length; d++) {
                         for (int k = 2; k <= MAX_K; k++) {
                             if (flipVars[i][j][d][k] != null) {
@@ -98,7 +96,7 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
             }
         }
 
-        // Constraint: Make exactly one move
+        // Contrainte: Il faut effectuer exactement 1 mouvement
         MPConstraint makeOneMove = solver.makeConstraint(1.0, 1.0);
         for (int i = 0; i < Board.BOARD_SIZE; i++) {
             for (int j = 0; j < Board.BOARD_SIZE; j++) {
@@ -116,7 +114,7 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
                 for (int d = 0; d < allDirections.length; d++) {
                     for (int k = 2; k <= MAX_K; k++) {
                         if (flipMoveVars[i][j][d][k] != null) {
-                            objective.setCoefficient(flipMoveVars[i][j][d][k], k - 1); // k-1 flipped pieces
+                            objective.setCoefficient(flipMoveVars[i][j][d][k], k - 1);
                         }
                     }
                 }
@@ -135,16 +133,19 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
             }
         }
 
-        System.out.println("No solution found");
+        System.out.println("Aucun mouvement valide trouvé.");
         return new int[] {};
     }
 
     private boolean isValidFlipLength(int i, int j, int dx, int dy, int k) {
         for (int n = 1; n <= k; n++) {
-            int ni = i + n * dx;
-            int nj = j + n * dy;
 
-            if (ni < 0 || ni >= Board.BOARD_SIZE || nj < 0 || nj >= Board.BOARD_SIZE) {
+            if (
+                    i + n * dx < 0 ||
+                    i + n * dx >= Board.BOARD_SIZE ||
+                    j + n * dy < 0 ||
+                    j + n * dy >= Board.BOARD_SIZE
+            ) {
                 return false;
             }
         }
@@ -152,28 +153,23 @@ public class NotHelloConstraintStrategy implements NotHelloStrategy {
     }
 
     /**
-     * Adds constraints to ensure a valid flip in the specified direction.
+     * Ajoute les contraintes de flip pour un coup donné dans une direction donnée.
      */
     private void addFlipConstraints(int[][] boardMatrix, MPSolver solver, int i, int j, int dx, int dy, int k, MPVariable flipVar) {
-        // Check if all cells from 1 to k-1 are opponent pieces
+        // Check toutes les cellules de 1 à k-1
         for (int n = 1; n < k; n++) {
-            int ni = i + n * dx;
-            int nj = j + n * dy;
 
-            if (boardMatrix[ni][nj] != OPP_COLOR) {
-                // If any cell doesn't have opponent's piece, this flip is invalid
+            if (boardMatrix[i + n * dx][j + n * dy] != OPP_COLOR) {
+                // Si aucune cellule n'est un adversaire, cette contrainte est invalide
                 MPConstraint c = solver.makeConstraint(0.0, 0.0);
                 c.setCoefficient(flipVar, 1.0);
                 return;
             }
         }
 
-        // Check if cell k has my color
-        int ki = i + k * dx;
-        int kj = j + k * dy;
-
-        if (boardMatrix[ki][kj] != MY_COLOR) {
-            // If the last cell doesn't have my piece, this flip is invalid
+        // Check la cellule k
+        if (boardMatrix[i + k * dx][j + k * dy] != MY_COLOR) {
+            // Si la cellule k n'est pas de ma couleur, cette contrainte est invalide
             MPConstraint c = solver.makeConstraint(0.0, 0.0);
             c.setCoefficient(flipVar, 1.0);
         }
