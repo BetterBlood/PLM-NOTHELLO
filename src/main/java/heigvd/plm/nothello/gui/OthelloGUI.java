@@ -298,6 +298,7 @@ public class OthelloGUI extends JFrame {
             protected void done() {
                 updateSimulationButtonState();
                 updateStepByStepButtonState();
+                updateBoardDisplay();
                 loadingLabel.setVisible(false);
             }
         };
