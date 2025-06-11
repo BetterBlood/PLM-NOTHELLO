@@ -180,6 +180,7 @@ public class OthelloGUI extends JFrame {
                 JOptionPane.showMessageDialog(this, "Game Over: " + " Scores: Noir: " + blackScore + ", Blanc: " + whiteScore + ".");
             }
         }
+        updateBoardDisplay();
     }
 
     private void updateBoardDisplay() {
