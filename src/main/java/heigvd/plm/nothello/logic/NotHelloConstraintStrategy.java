@@ -14,10 +14,6 @@ import java.util.List;
 
 public class NotHelloConstraintStrategy implements NotHelloStrategy {
 
-    public static final int MY_COLOR = -1;
-    public static final int OPP_COLOR = 1;
-    public static final int EMPTY = 0;
-
     /**
      * Calcule le meilleur mouvement possible pour le joueur courant.
      * Le meilleur mouvement est celui qui maximise le nombre de pièces adverses retournées.
