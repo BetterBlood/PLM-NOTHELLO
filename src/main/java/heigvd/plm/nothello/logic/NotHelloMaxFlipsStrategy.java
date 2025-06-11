@@ -5,20 +5,42 @@ import com.google.ortools.sat.*;
 import heigvd.plm.nothello.game.Board;
 import heigvd.plm.nothello.game.PieceColor;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
 public class NotHelloMaxFlipsStrategy implements NotHelloStrategy {
+
     @Override
-    public List<int[]> evaluate(Board board, int depth, NotHelloStrategy strategy) {
+    public int[] evaluate(Board board) {
+        List<int[]> evaluations = evaluateAllMoves(board);
+        if (evaluations.isEmpty()) {
+            return null; // Aucun coup possible
+        }
+        // Sélectionne le coup avec le score le plus élevé
+        evaluations.sort((a, b) -> Integer.compare(b[2], a[2]));
+        int[] bestMove = evaluations.get(0);
+        return new int[]{bestMove[0], bestMove[1]};
+    }
+
+    public List<int[]> getNormalizedScores(Board board) {
+        return normalizeScores(evaluateAllMoves(board));
+    }
+
+    /**
+     * Évalue le score d'un coup à la position (x, y) pour un joueur donné, à une certaine profondeur.
+     *
+     * @param board    L'état actuel du plateau
+     * @return Un score entier représentant la qualité du coup
+     */
+    private List<int[]> evaluateAllMoves(Board board) {
 
         // 1. Cloner le plateau
         // 2. Appliquer le coup du joueur
-        // 3. Si depth > 1, générer les coups de l’adversaire et évaluer leur meilleur contre-coup
-        // 4. Retourner une évaluation brute
+        // 3. Retourner une évaluation brute
 
-        System.out.println("NotHelloMaxFlipsStrategy:evaluate() with depth: " + depth + " for player: " + board.getPlayerTurn());
+        System.out.println("NotHelloMaxFlipsStrategy:evaluate() for player: " + board.getPlayerTurn());
         Loader.loadNativeLibraries();
 
         List<int[]> validMoves = board.getValidMovesForCurrentPlayer();
@@ -32,7 +54,7 @@ public class NotHelloMaxFlipsStrategy implements NotHelloStrategy {
             CpModel model = new CpModel();
             BoolVar moveVar = model.newBoolVar("move_" + x + "_" + y);
 
-            int score = simulateMoveWithDepth(board, x, y, depth, strategy);
+            int score = board.getMoveScore(x, y, board.getPlayerTurn());
 
             // Score objectif pour CE coup uniquement
             model.maximize(LinearExpr.weightedSum(new BoolVar[]{moveVar}, new long[]{score}));
@@ -55,64 +77,38 @@ public class NotHelloMaxFlipsStrategy implements NotHelloStrategy {
         return evaluatedMoves;
     }
 
+
     /**
-     * Simule le coup joué et évalue récursivement jusqu'à la profondeur donnée.
+     * Normalise les scores sur une échelle de 1 (meilleur) à 5 (pire).
+     * @param evaluations liste de coups (x, y, rawScore)
+     * @return liste de coups (x, y, normalizedScore)
      */
-    private int simulateMoveWithDepth(Board originalBoard, int x, int y, int depth, NotHelloStrategy enemy_strategy) {
-        System.out.println("simulateMoveWithDepth(x=" + x + ", y=" + y + ", depth=" + depth + ", player=" + originalBoard.getPlayerTurn() + ")");
-        if (depth <= 0) return 0;
-        if (depth == 1) return originalBoard.getMoveScore(x, y, originalBoard.getPlayerTurn());
+    private List<int[]> normalizeScores(List<int[]> evaluations) {
+        if (evaluations.isEmpty()) return evaluations;
 
-        // odd : player, otherwise: opponent
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
 
-        // Clone du plateau
-        Board cloned = cloneBoard(originalBoard);
-        PieceColor currentPlayer = cloned.getPlayerTurn();
-
-        int baseScore = originalBoard.getMoveScore(x, y, currentPlayer);
-        // Joue le coup sur le plateau cloné
-        boolean movePlayed = cloned.playAt(x, y);
-        if (!movePlayed) {
-            System.out.println(cloned.toString());
-            System.out.println("Coup invalide (" + x + ";" + y + ") à depth " + depth); // wtf ??
-            return 0;
+        for (int[] eval : evaluations) {
+            int score = eval[2];
+            if (score < min) min = score;
+            if (score > max) max = score;
         }
 
-        if (cloned.getPlayerTurn() == currentPlayer) { // opponent can't play
-            PredictionEvaluator playerAgainEvaluator = new PredictionEvaluator(cloned);
-            playerAgainEvaluator.setStrategy(this);
+        List<int[]> normalizedList = new ArrayList<>();
+        for (int[] eval : evaluations) {
+            int x = eval[0];
+            int y = eval[1];
+            int rawScore = eval[2];
+            int normalized = 3;
 
-            List<int[]> nextMoves = cloned.getValidMovesForCurrentPlayer();
-            if (nextMoves.isEmpty()) return baseScore;
-
-            int bestResponse = 0;
-            for (int[] againMove : nextMoves) {
-                int res = simulateMoveWithDepth(cloned, againMove[0], againMove[1], depth - 2, enemy_strategy);
-                bestResponse = Math.max(bestResponse, res);
+            if (max != min) {
+                normalized = 1 + (int) Math.round(4.0 * (max - rawScore) / (double) (max - min)); // Inversé pour que 1 = meilleur
             }
-            return baseScore + bestResponse;
+
+            normalizedList.add(new int[]{x, y, normalized});
         }
 
-        PredictionEvaluator enemyEvaluator = new PredictionEvaluator(cloned);
-        enemyEvaluator.setStrategy(enemy_strategy);
-
-        List<int[]> adversaryMoves = cloned.getValidMovesForCurrentPlayer();
-        if (adversaryMoves.isEmpty()) {
-            System.out.println("Impossible output, normaly condition should be deleted if this is never displayed");
-            return baseScore; // Aucun coup adverse possible
-        }
-
-        int worstOutcome = Integer.MIN_VALUE;
-        // toujours 1 coup adverse au minimum puisque le cas où l'ennemi ne peut pas jouer est traîté
-        for (int[] advMove : adversaryMoves) {
-            int advX = advMove[0];
-            int advY = advMove[1];
-
-            // Recurse sur la réponse adverse
-            int responseScore = simulateMoveWithDepth(cloned, advX, advY, depth - 1, this);
-            worstOutcome = Math.max(worstOutcome, responseScore);
-        }
-
-        return baseScore - worstOutcome; // impact négatif de l’adversaire
+        return normalizedList;
     }
 }

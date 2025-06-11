@@ -1,9 +1,13 @@
 package heigvd.plm.nothello.game;
 
+import heigvd.plm.nothello.logic.NotHelloConstraintStrategy;
+import heigvd.plm.nothello.logic.NotHelloStrategy;
+
 import java.sql.SQLOutput;
 import java.util.LinkedList;
 
 public class Board {
+    public static final int BOARD_SIZE = 8;
 
     private PieceColor[][] board;
     private PieceColor currentPlayer;
@@ -250,5 +254,27 @@ public class Board {
         }
         sb.append(" └────────────────┘");
         return sb.toString();
+    }
+
+    /*
+        * Retourne une matrice qui représente l'état du plateau de jeu.
+        * 0 représente une case vide
+        * 1 représente une pièce de la couleur du joueur qui demande
+        * 2 représente une pièce de l'adversaire.
+     */
+    public int[][] getBoardMatrix(PieceColor forColor) {
+        int[][] matrix = new int[8][8];
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                if (board[i][j] == PieceColor.NONE) {
+                    matrix[i][j] = NotHelloConstraintStrategy.EMPTY;
+                } else if (board[i][j] == forColor) {
+                    matrix[i][j] = NotHelloConstraintStrategy.MY_COLOR;
+                } else {
+                    matrix[i][j] = NotHelloConstraintStrategy.OPP_COLOR;
+                }
+            }
+        }
+        return matrix;
     }
 }

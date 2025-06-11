@@ -16,6 +16,7 @@ import java.util.Objects;
 public class OthelloGUI extends JFrame {
     private final Board board;
     private final PredictionEvaluator evaluator;
+    private final NotHelloMaxFlipsStrategy maxFlipsStrategy;
     private final JButton[][] buttons = new JButton[8][8];
     private final JComboBox<String> player1Type;
     private final JComboBox<String> player2Type;
@@ -26,23 +27,21 @@ public class OthelloGUI extends JFrame {
     private final JLabel currentPlayerLabel;
     private final JButton simulateButton;
     private final String[] playerSelection = new String[]{"Human", "Bot"};
-    private final String[] strat = new String[]{"Max Flips", "Min Opponent Flips", "Min Opponent Opportunities", "Placement Priority"};
+    private final String[] strat = new String[]{"Procédural", "Contrainte"};
 
     private final JButton stepByStepButton;
-    private final JSpinner player1Depth;
-    private final JSpinner player2Depth;
     private final JCheckBox player1PredictionToggle;
     private final JCheckBox player2PredictionToggle;
     private final JButton showPrediction = new JButton("Compute Strategy");
     private final JLabel loadingLabel = new JLabel();
 
-    // Possibilité d'ajouter un délai, en variable pour l'instant
-    // TODO: ajouter un slider pour le délai de simulation
+    // Possibilité d'ajouter un délai
     private static final int SIMULATION_DELAY_MS = 0;
 
     public OthelloGUI(){
         this.board = new Board();
         this.evaluator = new PredictionEvaluator(this.board);
+        this.maxFlipsStrategy = new NotHelloMaxFlipsStrategy();
 
         setTitle("Othello - PLM");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
@@ -84,11 +83,6 @@ public class OthelloGUI extends JFrame {
         player1Panel.add(player1Strategy);
 
         player1Panel.add(Box.createVerticalStrut(5));
-        player1Panel.add(new JLabel("Profondeur :"));
-        player1Depth = new JSpinner(new SpinnerNumberModel(1, 1, 5, 1));
-        player1Panel.add(player1Depth);
-
-        player1Panel.add(Box.createVerticalStrut(5));
         player1PredictionToggle = new JCheckBox("Afficher Prédictions");
         player1PredictionToggle.setSelected(true);
         player1Panel.add(player1PredictionToggle);
@@ -106,11 +100,6 @@ public class OthelloGUI extends JFrame {
         player2Panel.add(Box.createVerticalStrut(5));
         player2Panel.add(new JLabel("Stratégie :"));
         player2Panel.add(player2Strategy);
-
-        player2Panel.add(Box.createVerticalStrut(5));
-        player2Panel.add(new JLabel("Profondeur :"));
-        player2Depth = new JSpinner(new SpinnerNumberModel(1, 1, 5, 1));
-        player2Panel.add(player2Depth);
 
         player2Panel.add(Box.createVerticalStrut(5));
         player2PredictionToggle = new JCheckBox("Afficher Prédictions");
@@ -191,6 +180,7 @@ public class OthelloGUI extends JFrame {
                 JOptionPane.showMessageDialog(this, "Game Over: " + " Scores: Noir: " + blackScore + ", Blanc: " + whiteScore + ".");
             }
         }
+        updateBoardDisplay();
     }
 
     private void updateBoardDisplay() {
@@ -224,14 +214,13 @@ public class OthelloGUI extends JFrame {
         whiteScoreLabel.setText("Blanc : " + whiteScore);
 
         if (shouldShowPrediction()) {
-            evaluator.setStrategy(getSelectedStrategyForCurrentPlayer());
             loadingLabel.setVisible(true);
 
             SwingWorker<List<int[]>, Void> worker = new SwingWorker<>() {
                 @Override
                 protected List<int[]> doInBackground() {
                     // Calculer en background
-                    return evaluator.evaluateMoves(getSelectedDepthForCurrentPlayer() * 2 - 1, getSelectedStrategyForOpponent());
+                    return maxFlipsStrategy.getNormalizedScores(board);
                 }
 
                 @Override
@@ -253,10 +242,8 @@ public class OthelloGUI extends JFrame {
     private NotHelloStrategy getSelectedStrategyForCurrentPlayer() {
         JComboBox<String> box = board.getPlayerTurn() == PieceColor.BLACK ? player1Strategy : player2Strategy;
         return switch (Objects.requireNonNull(box.getSelectedItem()).toString()) {
-            case "Max Flips" -> new NotHelloMaxFlipsStrategy();
-            case "Min Opponent Flips" -> new NotHelloMinOpponentFlipsStrategy();
-            case "Min Opponent Opportunities" -> new NotHelloMinOpponentOpportunitiesStrategy();
-            case "Placement Priority" -> new NotHelloPlacementPriorityStrategy();
+            case "Procédural" -> new NotHelloMaxFlipsStrategy();
+            case "Contrainte" -> new NotHelloConstraintStrategy();
             default -> new NotHelloMaxFlipsStrategy();
         };
     }
@@ -264,18 +251,10 @@ public class OthelloGUI extends JFrame {
     private NotHelloStrategy getSelectedStrategyForOpponent() {
         JComboBox<String> box = board.getPlayerTurn() != PieceColor.BLACK ? player1Strategy : player2Strategy;
         return switch (Objects.requireNonNull(box.getSelectedItem()).toString()) {
-            case "Max Flips" -> new NotHelloMaxFlipsStrategy();
-            case "Min Opponent Flips" -> new NotHelloMinOpponentFlipsStrategy();
-            case "Min Opponent Opportunities" -> new NotHelloMinOpponentOpportunitiesStrategy();
-            case "Placement Priority" -> new NotHelloPlacementPriorityStrategy();
+            case "Procédural" -> new NotHelloMaxFlipsStrategy();
+            case "Contrainte" -> new NotHelloConstraintStrategy();
             default -> new NotHelloMaxFlipsStrategy();
         };
-    }
-
-    private int getSelectedDepthForCurrentPlayer() {
-        return board.getPlayerTurn() == PieceColor.BLACK
-                ? (int) player1Depth.getValue()
-                : (int) player2Depth.getValue();
     }
 
 
@@ -290,45 +269,28 @@ public class OthelloGUI extends JFrame {
                     loadingLabel.setVisible(true);
 
                     NotHelloStrategy strategy = getSelectedStrategyForCurrentPlayer();
-                    int depth = getSelectedDepthForCurrentPlayer();
                     evaluator.setStrategy(strategy);
-                    List<int[]> evaluations = evaluator.evaluateMoves(depth * 2 - 1, strategy);
+                    int[] bestMove = evaluator.evaluateMoves();
 
-                    if (!evaluations.isEmpty()) {
-                        int bestScore = Integer.MAX_VALUE;
-                        for (int[] eval : evaluations) {
-                            if (eval[2] < bestScore) {
-                                bestScore = eval[2];
-                            }
-                        }
-
-                        List<int[]> bestMoves = new ArrayList<>();
-                        for (int[] eval : evaluations) {
-                            if (eval[2] == bestScore) {
-                                bestMoves.add(eval);
-                            }
-                        }
-
-                        Collections.shuffle(bestMoves);
-
-                        if (!bestMoves.isEmpty()) {
-                            int[] selectedMove = bestMoves.get(0);
-
-                            final int moveX = selectedMove[0];
-                            final int moveY = selectedMove[1];
-
-                            SwingUtilities.invokeLater(() -> {
-                                handleCellClick(moveX, moveY);
-                                currentPlayerLabel.setText("Tour actuel : " + board.getPlayerTurn());
-                                loadingLabel.setVisible(false);
-                            });
-
-                            Thread.sleep(SIMULATION_DELAY_MS);
-                        }
-                    } else {
-                        // Le joueur courant n'a pas de coups valides, on passe au joueur suivant
-                        break;
+                    if (bestMove == null) {
+                        // Aucun coup valide, on passe au joueur suivant
+                        board.setPlayerTurn(board.getPlayerTurn().opposite());
+                        continue;
                     }
+
+
+                    final int moveX = bestMove[0];
+                    final int moveY = bestMove[1];
+
+                    SwingUtilities.invokeLater(() -> {
+                        handleCellClick(moveX, moveY);
+                        currentPlayerLabel.setText("Tour actuel : " + board.getPlayerTurn());
+                        loadingLabel.setVisible(false);
+                    });
+
+                    Thread.sleep(SIMULATION_DELAY_MS);
+
+
                 }
                 return null;
             }
@@ -337,6 +299,7 @@ public class OthelloGUI extends JFrame {
             protected void done() {
                 updateSimulationButtonState();
                 updateStepByStepButtonState();
+                updateBoardDisplay();
                 loadingLabel.setVisible(false);
             }
         };
@@ -351,35 +314,20 @@ public class OthelloGUI extends JFrame {
             protected Void doInBackground() {
                 NotHelloStrategy strategy = getSelectedStrategyForCurrentPlayer();
                 NotHelloStrategy opponentStrategy = getSelectedStrategyForOpponent();
-                int depth = getSelectedDepthForCurrentPlayer();
                 evaluator.setStrategy(strategy);
 
-                // TODO Est-ce qu'il faudrait utiliser la stratégie de l'adversaire ?
-                List<int[]> evaluations = evaluator.evaluateMoves(depth * 2 - 1, opponentStrategy);
+                evaluator.setStrategy(strategy);
 
-                if (!evaluations.isEmpty()) {
-                    int bestScore = Integer.MAX_VALUE;
-                    for (int[] eval : evaluations) {
-                        if (eval[2] < bestScore) {
-                            bestScore = eval[2];
-                        }
-                    }
+                int[] bestMove = evaluator.evaluateMoves();
 
-                    List<int[]> bestMoves = new ArrayList<>();
-                    for (int[] eval : evaluations) {
-                        if (eval[2] == bestScore) {
-                            bestMoves.add(eval);
-                        }
-                    }
-
-                    // Pour ajouter un peu de variété, on prend un des meilleurs coups au hasard
-                    Collections.shuffle(bestMoves);
-
-                    if (!bestMoves.isEmpty()) {
-                        int[] selectedMove = bestMoves.get(0);
-                        handleCellClick(selectedMove[0], selectedMove[1]);
-                    }
+                if (bestMove == null) {
+                    // Aucun coup valide, on passe au joueur suivant
+                    board.setPlayerTurn(board.getPlayerTurn().opposite());
+                    return null;
                 }
+
+                handleCellClick(bestMove[0], bestMove[1]);
+
                 return null;
             }
 
@@ -434,3 +382,4 @@ public class OthelloGUI extends JFrame {
         SwingUtilities.invokeLater(OthelloGUI::new);
     }
 }
+

@@ -15,16 +15,6 @@ public class App
 {
     public static void main( String[] args )
     {
-        Board board = new Board();
-        System.out.println("Initial board:");
-        System.out.println(board);
-        board.setColorAt(3, 2, PieceColor.BLACK);
-        System.out.println(board);
-        board.setColorAt(3, 1, PieceColor.WHITE);
-        System.out.println(board);
-        board.setColorAt(3, 0, PieceColor.BLACK);
-        System.out.println(board);
-
         SwingUtilities.invokeLater(OthelloGUI::new);
     }
 }
